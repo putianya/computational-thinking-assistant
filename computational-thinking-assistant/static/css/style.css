@@ -1,0 +1,415 @@
+/* ========== 全局样式 ========== */
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: 'Segoe UI', 'Microsoft YaHei', Arial, sans-serif;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    min-height: 100vh;
+    padding: 20px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+/* ========== 容器样式 ========== */
+.container {
+    width: 100%;
+    max-width: 1200px;  /* 增加最大宽度 */
+    margin: 0 auto;
+    background: white;
+    border-radius: 20px;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+    overflow: hidden;
+    animation: fadeIn 0.5s ease-in;
+    display: flex;
+    flex-direction: column;
+    height: 90vh;  /* 使用视口高度 */
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(-20px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+/* ========== 头部样式 ========== */
+.header {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    padding: 30px;
+    text-align: center;
+}
+
+.header h1 {
+    font-size: 28px;
+    margin-bottom: 10px;
+    font-weight: 600;
+}
+
+.header p {
+    font-size: 14px;
+    opacity: 0.9;
+}
+
+/* ========== 内容区域 ========== */
+.content {
+    flex: 1;  /* 占据剩余空间 */
+    padding: 30px;
+    overflow-y: auto;  /* 滚动 */
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+}
+
+/* ========== 测试区域 ========== */
+.test-section {
+    background: #f8f9fa;
+    padding: 20px;
+    border-radius: 10px;
+    border: 1px solid #e9ecef;
+}
+
+.test-section h2 {
+    font-size: 20px;
+    margin-bottom: 10px;
+    color: #333;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.test-section p {
+    color: #666;
+    margin-bottom: 15px;
+    font-size: 14px;
+}
+
+/* ========== 按钮样式 ========== */
+button {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    border: none;
+    padding: 12px 24px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 500;
+    transition: all 0.3s ease;
+    box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);
+}
+
+button:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(102, 126, 234, 0.4);
+}
+
+button:active {
+    transform: translateY(0);
+}
+
+button:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+    transform: none;
+}
+
+/* ========== 测试结果 ========== */
+.result {
+    display: none;
+    margin-top: 15px;
+    padding: 15px;
+    border-radius: 8px;
+    background: white;
+    border: 1px solid #dee2e6;
+}
+
+.result.show {
+    display: block;
+    animation: slideDown 0.3s ease;
+}
+
+@keyframes slideDown {
+    from {
+        opacity: 0;
+        transform: translateY(-10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.result p {
+    margin: 8px 0;
+    font-size: 14px;
+    line-height: 1.6;
+}
+
+.result .success {
+    color: #28a745;
+    font-weight: 600;
+}
+
+.result .error {
+    color: #dc3545;
+    font-weight: 600;
+}
+
+.result .info {
+    color: #666;
+}
+
+/* ========== 聊天容器 ========== */
+.chat-container {
+    display: flex;
+    flex-direction: column;
+    height: 500px;  /* 固定高度 */
+    background: white;
+    border-radius: 10px;
+    overflow: hidden;
+}
+
+/* ========== 聊天消息区域 ========== */
+.chat-messages {
+    flex: 1;
+    padding: 20px;
+    overflow-y: auto;
+    background: #f8f9fa;
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+}
+
+/* 自定义滚动条 */
+.chat-messages::-webkit-scrollbar {
+    width: 8px;
+}
+
+.chat-messages::-webkit-scrollbar-track {
+    background: #f1f1f1;
+    border-radius: 4px;
+}
+
+.chat-messages::-webkit-scrollbar-thumb {
+    background: #ccc;
+    border-radius: 4px;
+}
+
+.chat-messages::-webkit-scrollbar-thumb:hover {
+    background: #999;
+}
+
+/* ========== 消息样式 ========== */
+.message {
+    display: flex;
+    margin-bottom: 15px;
+    animation: messageIn 0.3s ease;
+}
+
+@keyframes messageIn {
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.message-content {
+    max-width: 70%;
+    padding: 12px 16px;
+    border-radius: 12px;
+    line-height: 1.6;
+    font-size: 14px;
+    position: relative;
+    word-wrap: break-word;
+}
+
+/* 用户消息 */
+.message.user {
+    justify-content: flex-end;
+}
+
+.message.user .message-content {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    border-bottom-right-radius: 4px;
+}
+
+/* Bot 消息 */
+.message.bot {
+    justify-content: flex-start;
+}
+
+.message.bot .message-content {
+    background: white;
+    color: #333;
+    border: 1px solid #e9ecef;
+    border-bottom-left-radius: 4px;
+}
+
+/* 消息时间 */
+.message-time {
+    display: block;
+    font-size: 11px;
+    opacity: 0.7;
+    margin-top: 5px;
+    text-align: right;
+}
+
+/* ========== 输入区域 ========== */
+.chat-input-area {
+    display: flex;
+    gap: 10px;
+    padding: 20px;
+    background: white;
+    border-top: 1px solid #e9ecef;
+}
+
+.chat-input-area input {
+    flex: 1;
+    padding: 12px 16px;
+    border: 1px solid #dee2e6;
+    border-radius: 8px;
+    font-size: 14px;
+    outline: none;
+    transition: all 0.3s ease;
+}
+
+.chat-input-area input:focus {
+    border-color: #667eea;
+    box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+}
+
+.chat-input-area button {
+    padding: 12px 30px;
+    white-space: nowrap;
+}
+
+/* ========== 状态栏 ========== */
+.status-bar {
+    background: #f8f9fa;
+    padding: 12px 30px;
+    text-align: center;
+    font-size: 12px;
+    color: #666;
+    border-top: 1px solid #e9ecef;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 10px;
+}
+
+.status-indicator {
+    width: 8px;
+    height: 8px;
+    background: #28a745;
+    border-radius: 50%;
+    display: inline-block;
+    animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+}
+
+/* ========== 加载动画 ========== */
+.loading {
+    display: inline-block;
+    width: 16px;
+    height: 16px;
+    border: 2px solid rgba(255, 255, 255, 0.3);
+    border-top-color: white;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+/* ========== 响应式设计 ========== */
+@media (max-width: 768px) {
+    body {
+        padding: 10px;
+    }
+    
+    .container {
+        height: 95vh;
+        border-radius: 10px;
+    }
+    
+    .header {
+        padding: 20px;
+    }
+    
+    .header h1 {
+        font-size: 22px;
+    }
+    
+    .content {
+        padding: 15px;
+    }
+    
+    .chat-container {
+        height: 400px;
+    }
+    
+    .message-content {
+        max-width: 85%;
+        font-size: 13px;
+    }
+    
+    .chat-input-area {
+        padding: 15px;
+        flex-wrap: wrap;
+    }
+    
+    .chat-input-area input {
+        width: 100%;
+    }
+    
+    .chat-input-area button {
+        width: 100%;
+    }
+}
+
+@media (max-width: 480px) {
+    .header h1 {
+        font-size: 18px;
+    }
+    
+    .header p {
+        font-size: 12px;
+    }
+    
+    .test-section h2 {
+        font-size: 16px;
+    }
+    
+    .chat-container {
+        height: 350px;
+    }
+}
+
+/* ========== 打印样式 ========== */
+@media print {
+    body {
+        background: white;
+    }
+    
+    .container {
+        box-shadow: none;
+    }
+    
+    .chat-input-area,
+    .status-bar {
+        display: none;
+    }
+}

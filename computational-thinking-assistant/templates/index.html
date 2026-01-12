@@ -1,255 +1,12 @@
-<!-- HTML5 结构
-CSS 样式（Flexbox、动画）
-JavaScript ES6（async/await、箭头函数）
-DOM 操作
-Fetch API（AJAX 请求） -->
-
-<! DOCTYPE html>
+<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>计算思维课程助手系统</title>
-    <style>
-        /* ========== 全局样式 ========== */
-        * {
-            margin:  0;
-            padding: 0;
-            box-sizing:  border-box;
-        }
-        
-        body {
-            font-family: 'Segoe UI', 'Microsoft YaHei', Arial, sans-serif;
-            background:  linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            min-height: 100vh;
-            padding: 20px;
-        }
-        
-        /* ========== 容器样式 ========== */
-        . container {
-            max-width:  900px;
-            margin: 0 auto;
-            background: white;
-            border-radius: 20px;
-            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
-            overflow: hidden;
-            animation: fadeIn 0.5s ease-in;
-        }
-        
-        @keyframes fadeIn {
-            from { opacity: 0; transform:  translateY(-20px); }
-            to { opacity: 1; transform: translateY(0); }
-        }
-        
-        /* ========== 头部样式 ========== */
-        .header {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            padding: 30px;
-            text-align: center;
-        }
-        
-        .header h1 {
-            font-size: 32px;
-            margin-bottom:  10px;
-        }
-        
-        .header p {
-            font-size: 14px;
-            opacity: 0.9;
-        }
-        
-        /* ========== 主体内容 ========== */
-        .content {
-            padding: 30px;
-        }
-        
-        /* ========== 测试区域 ========== */
-        .test-section {
-            margin-bottom: 25px;
-            padding: 20px;
-            background: #f8f9fa;
-            border-radius: 12px;
-            border: 2px solid #e9ecef;
-        }
-        
-        . test-section h2 {
-            color: #495057;
-            margin-bottom:  15px;
-            font-size: 18px;
-        }
-        
-        .test-section p {
-            color: #6c757d;
-            margin-bottom: 15px;
-            line-height: 1.6;
-        }
-        
-        /* ========== 聊天区域 ========== */
-        .chat-container {
-            background: white;
-            border-radius: 12px;
-            border: 2px solid #e9ecef;
-        }
-        
-        .chat-messages {
-            height: 400px;
-            overflow-y: auto;
-            padding: 20px;
-            background: #f8f9fa;
-        }
-        
-        .message {
-            margin-bottom: 15px;
-            animation: slideIn 0.3s ease-out;
-        }
-        
-        @keyframes slideIn {
-            from { opacity: 0; transform: translateX(-20px); }
-            to { opacity: 1; transform:  translateX(0); }
-        }
-        
-        .message. user {
-            text-align: right;
-        }
-        
-        .message-content {
-            display: inline-block;
-            max-width: 70%;
-            padding: 12px 18px;
-            border-radius:  18px;
-            line-height: 1.5;
-        }
-        
-        .message. user .message-content {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-        }
-        
-        .message.bot .message-content {
-            background: white;
-            color: #333;
-            border:  2px solid #e9ecef;
-        }
-        
-        .message-time {
-            display: block;
-            font-size: 12px;
-            color: #999;
-            margin-top: 5px;
-        }
-        
-        /* ========== 输入区域 ========== */
-        .chat-input-area {
-            display: flex;
-            gap: 10px;
-            padding: 20px;
-            background: white;
-            border-top: 2px solid #e9ecef;
-        }
-        
-        input[type="text"] {
-            flex: 1;
-            padding: 12px 20px;
-            border: 2px solid #e9ecef;
-            border-radius: 25px;
-            font-size:  16px;
-            transition: border-color 0.3s;
-        }
-        
-        input[type="text"]:focus {
-            outline: none;
-            border-color: #667eea;
-        }
-        
-        /* ========== 按钮样式 ========== */
-        button {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            border: none;
-            padding: 12px 30px;
-            border-radius:  25px;
-            cursor: pointer;
-            font-size: 16px;
-            font-weight: bold;
-            transition: all 0.3s;
-            box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);
-        }
-        
-        button:hover {
-            transform:  translateY(-2px);
-            box-shadow: 0 6px 20px rgba(102, 126, 234, 0.4);
-        }
-        
-        button:active {
-            transform:  translateY(0);
-        }
-        
-        button:disabled {
-            background: #ccc;
-            cursor: not-allowed;
-            transform: none;
-        }
-        
-        /* ========== 结果显示 ========== */
-        .result {
-            margin-top: 15px;
-            padding: 15px;
-            background: white;
-            border-radius: 10px;
-            border-left: 4px solid #667eea;
-            display: none;
-        }
-        
-        .result.show {
-            display: block;
-            animation: slideIn 0.3s ease-out;
-        }
-        
-        . success { color: #10b981; font-weight: bold; }
-        .error { color: #ef4444; font-weight: bold; }
-        .info { color: #6b7280; font-size: 14px; margin-top: 5px; }
-        
-        /* ========== 状态指示器 ========== */
-        .status-bar {
-            text-align: center;
-            padding: 15px;
-            background: #f8f9fa;
-            font-size: 14px;
-            color: #6c757d;
-        }
-        
-        . status-indicator {
-            display: inline-block;
-            width: 10px;
-            height: 10px;
-            border-radius: 50%;
-            margin-right: 8px;
-            background: #10b981;
-            animation: pulse 2s infinite;
-        }
-        
-        @keyframes pulse {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.5; }
-        }
-        
-        /* ========== 加载动画 ========== */
-        . loading {
-            display: inline-block;
-            width: 20px;
-            height: 20px;
-            border: 3px solid #f3f3f3;
-            border-top: 3px solid #667eea;
-            border-radius:  50%;
-            animation: spin 1s linear infinite;
-        }
-        
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
-    </style>
+    
+    <!-- 引入 CSS（相当于 Qt 的 QSS）-->
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
 </head>
 <body>
     <div class="container">
@@ -261,11 +18,11 @@ Fetch API（AJAX 请求） -->
         
         <!-- 主体内容 -->
         <div class="content">
-            <!-- API 测试区域 -->
+            <!-- 系统测试区域 -->
             <div class="test-section">
                 <h2>🔧 系统测试</h2>
                 <p>点击按钮测试后端连接和 OpenAI API 配置：</p>
-                <button onclick="testAPI()" id="testBtn">测试系统状态</button>
+                <button id="testBtn">测试系统状态</button>
                 <div class="result" id="testResult"></div>
             </div>
             
@@ -292,9 +49,8 @@ Fetch API（AJAX 请求） -->
                             type="text" 
                             id="messageInput" 
                             placeholder="输入你的问题，按回车发送..."
-                            onkeypress="handleKeyPress(event)"
                         >
-                        <button onclick="sendMessage()" id="sendBtn">发送</button>
+                        <button id="sendBtn">发送</button>
                     </div>
                 </div>
             </div>
@@ -307,118 +63,11 @@ Fetch API（AJAX 请求） -->
         </div>
     </div>
 
-    <script>
-        // ========== 测试 API 函数 ==========
-        async function testAPI() {
-            const resultDiv = document.getElementById('testResult');
-            const testBtn = document.getElementById('testBtn');
-            
-            resultDiv.classList.add('show');
-            resultDiv.innerHTML = '<p>⏳ 正在测试... </p>';
-            testBtn.disabled = true;
-            
-            try {
-                const response = await fetch('/api/test');
-                const data = await response.json();
-                
-                resultDiv.innerHTML = `
-                    <p class="success">✓ ${data.message}</p>
-                    <p class="info">状态: ${data.status}</p>
-                    <p class="info">时间: ${data.timestamp}</p>
-                    <p class="info">版本: ${data.version}</p>
-                    <p class="info">Python: ${data.python_version}</p>
-                    <p class="info">OpenAI 配置: ${data.openai_configured ? '已配置 ✓' : '未配置 ✗'}</p>
-                `;
-            } catch (error) {
-                resultDiv.innerHTML = `
-                    <p class="error">✗ 连接失败</p>
-                    <p class="info">错误: ${error.message}</p>
-                `;
-            } finally {
-                testBtn.disabled = false;
-            }
-        }
-        
-        // ========== 发送消息函数 ==========
-        async function sendMessage() {
-            const input = document.getElementById('messageInput');
-            const sendBtn = document.getElementById('sendBtn');
-            const chatMessages = document.getElementById('chatMessages');
-            const message = input.value.trim();
-            
-            if (!message) {
-                alert('请输入消息！');
-                return;
-            }
-            
-            // 禁用输入
-            input.disabled = true;
-            sendBtn.disabled = true;
-            sendBtn.innerHTML = '<span class="loading"></span>';
-            
-            // 显示用户消息
-            addMessage('user', message);
-            input.value = '';
-            
-            try {
-                // 发送到后端
-                const response = await fetch('/api/chat', {
-                    method: 'POST',
-                    headers:  { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ message: message })
-                });
-                
-                const data = await response.json();
-                
-                if (data.status === 'success') {
-                    // 显示 AI 回复
-                    addMessage('bot', data.bot_reply);
-                } else {
-                    // 显示错误
-                    addMessage('bot', `❌ 错误: ${data.message}`);
-                }
-            } catch (error) {
-                addMessage('bot', `❌ 发送失败:  ${error.message}`);
-            } finally {
-                // 恢复输入
-                input. disabled = false;
-                sendBtn.disabled = false;
-                sendBtn.innerHTML = '发送';
-                input.focus();
-            }
-        }
-        
-        // ========== 添加消息到聊天区域 ==========
-        function addMessage(type, content) {
-            const chatMessages = document.getElementById('chatMessages');
-            const messageDiv = document.createElement('div');
-            messageDiv.className = `message ${type}`;
-            
-            const now = new Date();
-            const timeStr = now.toLocaleTimeString('zh-CN');
-            
-            messageDiv.innerHTML = `
-                <div class="message-content">
-                    ${content. replace(/\n/g, '<br>')}
-                    <span class="message-time">${timeStr}</span>
-                </div>
-            `;
-            
-            chatMessages.appendChild(messageDiv);
-            chatMessages.scrollTop = chatMessages.scrollHeight;
-        }
-        
-        // ========== 键盘事件处理 ==========
-        function handleKeyPress(event) {
-            if (event.key === 'Enter') {
-                sendMessage();
-            }
-        }
-        
-        // ========== 页面加载完成 ==========
-        window.onload = function() {
-            document.getElementById('messageInput').focus();
-        };
-    </script>
+    <!-- 引入 JavaScript（注意顺序！）-->
+    <script src="{{ url_for('static', filename='js/config.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/models/ChatModel.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/views/ChatView.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/controllers/ChatController.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
 </body>
 </html>
