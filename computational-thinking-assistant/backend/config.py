@@ -15,13 +15,13 @@ class Config:
     # ========== Flask 配置 ==========
     SECRET_KEY = os.getenv('SECRET_KEY', 'dev-secret-key-change-me')
     DEBUG = True
-    HOST = '0.0.0.0'
+    HOST = '127.0.0.1'
     PORT = 5000
     
     # ========== OpenAI 配置 ==========
     OPENAI_API_KEY = os.getenv('OPENAI_API_KEY', '')
-    OPENAI_MODEL = os.getenv('OPENAI_MODEL', '')
-    OPENAI_BASE_URL = os.getenv('OPENAI_BASE_URL', '')
+    OPENAI_MODEL = os.getenv('OPENAI_MODEL', 'gpt-4o')
+    OPENAI_BASE_URL = os.getenv('OPENAI_BASE_URL', 'https://models.inference.ai.azure.com')
     OPENAI_TEMPERATURE = 0.7  # 回答的随机性（0-1）
     OPENAI_MAX_TOKENS = 1000  # 最大回复长度
     
