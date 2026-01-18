@@ -1,25 +1,65 @@
 <template>
   <div class="app-container">
-    <header class="app-header">
-      <h1>🎓 计算思维课程助手系统</h1>
-      <p>基于大语言模型的智能教学辅助平台 v1.0.0</p>
-    </header>
+    <!-- 未登录状态：显示路由视图（Login/Register） -->
+    <router-view v-if="!authStore.isLoggedIn" />
 
-    <main class="app-main">
-      <SystemTest />
-      <ChatWindow />
-    </main>
+    <!-- 已登录状态：显示完整应用界面 -->
+    <template v-else>
+      <header class="app-header">
+        <div class="header-left">
+          <h1>🎓 计算思维课程助手系统</h1>
+          <p>基于大语言模型的智能教学辅助平台 v1.0.0</p>
+        </div>
+        <div class="header-right">
+          <span class="user-info">👤 {{ authStore.user?.username }}</span>
+          <button @click="handleLogout" class="logout-btn">退出登录</button>
+        </div>
+      </header>
 
-    <footer class="app-footer">
-      <span class="status-indicator"></span>
-      系统运行中 | Powered by OpenAI GPT
-    </footer>
+      <main class="app-main">
+        <SystemTest />
+        <ChatWindow />
+      </main>
+
+      <footer class="app-footer">
+        <span class="status-indicator"></span>
+        系统运行中 | Powered by OpenAI GPT
+      </footer>
+    </template>
   </div>
 </template>
 
 <script setup>
+import { onMounted } from "vue";
+import { useRouter } from "vue-router";
+import { useAuthStore } from "./stores/user";
 import ChatWindow from "./components/ChatWindow.vue";
 import SystemTest from "./components/SystemTest.vue";
+
+const router = useRouter();
+const authStore = useAuthStore();
+
+// 页面加载时自动登录
+onMounted(async () => {
+  console.log("🚀 应用启动，尝试自动登录...");
+  const success = await authStore.autoLogin();
+
+  if (success) {
+    console.log("✅ 自动登录成功，跳转到首页");
+    router.push("/");
+  } else {
+    console.log("📭 无有效登录状态，跳转到登录页");
+    router.push("/login");
+  }
+});
+
+// 退出登录
+function handleLogout() {
+  if (confirm("确定要退出登录吗？")) {
+    authStore.logout();
+    router.push("/login");
+  }
+}
 </script>
 
 <style scoped>
@@ -33,19 +73,58 @@ import SystemTest from "./components/SystemTest.vue";
 .app-header {
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   color: white;
-  padding: 30px;
-  text-align: center;
+  padding: 20px 40px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
 }
 
-.app-header h1 {
-  font-size: 28px;
-  margin-bottom: 10px;
+.header-left h1 {
+  font-size: 24px;
+  margin-bottom: 5px;
   font-weight: 600;
 }
 
-.app-header p {
-  font-size: 14px;
+.header-left p {
+  font-size: 13px;
   opacity: 0.9;
+}
+
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+}
+
+.user-info {
+  font-size: 14px;
+  font-weight: 500;
+  background: rgba(255, 255, 255, 0.2);
+  padding: 8px 16px;
+  border-radius: 20px;
+}
+
+.logout-btn {
+  background: rgba(255, 255, 255, 0.3);
+  color: white;
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  padding: 8px 20px;
+  border-radius: 20px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+  transition: all 0.3s ease;
+}
+
+.logout-btn:hover {
+  background: rgba(255, 255, 255, 0.4);
+  border-color: white;
+  transform: translateY(-2px);
+}
+
+.logout-btn:active {
+  transform: translateY(0);
 }
 
 .app-main {

@@ -1,47 +1,65 @@
-# 类的定义
-# 环境变量读取
-# 配置分离（开发/生产环境）
-
-# config.py
+# -*- coding: utf-8 -*-
+"""
+配置文件 - 应用配置和环境变量
+"""
 import os
+from pathlib import Path
 from dotenv import load_dotenv
 
 # 加载 .env 文件
 load_dotenv()
 
+# 项目根目录
+BASE_DIR = Path(__file__).resolve().parent
+
+
 class Config:
     """应用配置类"""
     
-    # ========== Flask 配置 ==========
-    SECRET_KEY = os.getenv('SECRET_KEY', 'dev-secret-key-change-me')
-    DEBUG = True
-    HOST = '127.0.0.1'
-    PORT = 5000
+    # ========== Flask 基础配置 ==========
+    SECRET_KEY = os.getenv('SECRET_KEY', 'your-secret-key-change-in-production')
+    DEBUG = os.getenv('DEBUG', 'True').lower() == 'true'
+    HOST = os.getenv('HOST', '0.0.0.0')
+    PORT = int(os.getenv('PORT', 5000))
     
-    # ========== OpenAI 配置 ==========
+    # ========== 数据库配置 ⭐⭐⭐ ==========
+    # SQLite 数据库路径
+    SQLALCHEMY_DATABASE_URI = os.getenv(
+        'DATABASE_URL',
+        f'sqlite:///{BASE_DIR}/data/app.db'  # ⭐ 默认使用 SQLite
+    )
+    SQLALCHEMY_TRACK_MODIFICATIONS = False
+    SQLALCHEMY_ECHO = DEBUG  # 开发模式下打印 SQL 语句
+    
+    # ========== OpenAI API 配置 ==========
     OPENAI_API_KEY = os.getenv('OPENAI_API_KEY', '')
-    OPENAI_MODEL = os.getenv('OPENAI_MODEL', 'gpt-4o')
-    OPENAI_BASE_URL = os.getenv('OPENAI_BASE_URL', 'https://models.inference.ai.azure.com')
-    OPENAI_TEMPERATURE = 0.7  # 回答的随机性（0-1）
-    OPENAI_MAX_TOKENS = 1000  # 最大回复长度
+    OPENAI_BASE_URL = os.getenv('OPENAI_BASE_URL', 'https://api.openai.com/v1')
+    OPENAI_MODEL = os.getenv('OPENAI_MODEL', 'gpt-3.5-turbo')
     
-    # ⭐ 新增：流式输出配置
-    ENABLE_STREAMING = True
-    STREAM_CHUNK_SIZE = 50  # 每次发送的字符数
-
-    # ⭐ 新增：上下文配置
-    MAX_CONTEXT_MESSAGES = 10  # 保留最近10轮对话
-    CONTEXT_WINDOW = 4000  # token限制
-
-    # ========== 系统配置 ==========
-    SYSTEM_PROMPT = """你是一位专业的C语言和计算思维课程助教。
-你的任务是：
-1. 解答C语言编程问题
-2. 分析代码错误并提供修改建议
-3. 讲解数据结构和算法
-4. 帮助学生培养计算思维
-
-请用清晰、友好的方式回答，适当使用代码示例。"""
+    # ========== 聊天功能配置 ==========
+    ENABLE_STREAMING = os.getenv('ENABLE_STREAMING', 'True').lower() == 'true'
+    MAX_CONTEXT_MESSAGES = int(os.getenv('MAX_CONTEXT_MESSAGES', 10))
+    TEMPERATURE = float(os.getenv('TEMPERATURE', 0.7))
+    MAX_TOKENS = int(os.getenv('MAX_TOKENS', 2000))
     
-    # ========== 数据库配置（后续使用）==========
-    DATABASE_PATH = 'data/app.db'
+    # ========== 系统提示词 ==========
+    SYSTEM_PROMPT = """你是一位专业的计算思维课程助教，擅长：
+1. 帮助学生理解抽象、分解、模式识别、算法设计等计算思维核心概念
+2. 引导学生分析问题、设计解决方案
+3. 提供编程学习建议和代码示例
+4. 解答课程相关疑问
+
+请用简洁、易懂的语言回答问题，必要时提供示例代码。"""
+    
+    # ========== JWT 配置 ==========
+    JWT_SECRET_KEY = SECRET_KEY  # 使用相同的密钥
+    JWT_ALGORITHM = 'HS256'
+    JWT_EXPIRATION_HOURS = 24
+    
+    @staticmethod
+    def init_app(app):
+        """初始化应用配置"""
+        # 确保数据目录存在
+        data_dir = BASE_DIR / 'data'
+        data_dir.mkdir(exist_ok=True)
+        print(f"✅ 数据目录: {data_dir}")

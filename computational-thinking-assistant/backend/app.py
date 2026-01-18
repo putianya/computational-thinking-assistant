@@ -11,6 +11,10 @@ from flask import Flask, jsonify, request, Response, stream_with_context
 from flask_cors import CORS
 from config import Config
 from datetime import datetime
+from database import db, init_db
+from services.auth_service import AuthService
+from utils.decorators import login_required
+from flask import g
 
 # 设置标准输出为 UTF-8 编码
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
@@ -19,12 +23,15 @@ sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
 app = Flask(__name__)
 app.config.from_object(Config)
 
+# ⭐ 初始化数据库
+init_db(app)
+
 # 启用 CORS（允许前端跨域请求）
 CORS(app, resources={
     r"/api/*": {
         "origins": ["http://localhost:5173", "http://127.0.0.1:5173"],
         "methods": ["GET", "POST", "DELETE", "OPTIONS"],
-        "allow_headers": ["Content-Type"]
+        "allow_headers": ["Content-Type", "Authorization"]  # ⭐ 添加 Authorization
     }
 })
 
@@ -231,6 +238,156 @@ def get_context_info(session_id):
         })
         
     except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'message': str(e)
+        }), 500
+
+# ========== 认证相关路由 ==========
+
+@app.route('/api/auth/register', methods=['POST'])
+def register():
+    """
+    用户注册接口
+    """
+    try:
+        data = request.get_json()
+        username = data.get('username')
+        password = data.get('password')
+        email = data.get('email')
+        nickname = data.get('nickname')
+        
+        if not username or not password:
+            return jsonify({
+                'status': 'error',
+                'message': '用户名和密码不能为空'
+            }), 400
+        
+        result = AuthService.register(username, password, email, nickname)
+        
+        if result['success']:
+            return jsonify({
+                'status': 'success',
+                'message': result['message'],
+                'user': result['user']
+            }), 201
+        else:
+            return jsonify({
+                'status': 'error',
+                'message': result['message']
+            }), 400
+            
+    except Exception as e:
+        print(f"❌ 注册错误: {e}")
+        return jsonify({
+            'status': 'error',
+            'message': f'注册失败: {str(e)}'
+        }), 500
+
+
+@app.route('/api/auth/login', methods=['POST'])
+def login():
+    """
+    用户登录接口
+    """
+    try:
+        data = request.get_json()
+        username = data.get('username')
+        password = data.get('password')
+        
+        if not username or not password:
+            return jsonify({
+                'status': 'error',
+                'message': '用户名和密码不能为空'
+            }), 400
+        
+        result = AuthService.login(username, password)
+        
+        if result['success']:
+            return jsonify({
+                'status': 'success',
+                'message': result['message'],
+                'token': result['token'],
+                'user': result['user']
+            }), 200
+        else:
+            return jsonify({
+                'status': 'error',
+                'message': result['message']
+            }), 401
+            
+    except Exception as e:
+        print(f"❌ 登录错误: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            'status': 'error',
+            'message': f'登录失败: {str(e)}'
+        }), 500
+
+
+@app.route('/api/auth/verify', methods=['POST'])
+def verify_token():
+    """
+    验证 Token 接口
+    """
+    try:
+        data = request.get_json()
+        token = data.get('token')
+        
+        if not token:
+            return jsonify({
+                'status': 'error',
+                'message': 'Token 不能为空'
+            }), 400
+        
+        result = AuthService.verify_token(token)
+        
+        if result['valid']:
+            return jsonify({
+                'status': 'success',
+                'message': result['message'],
+                'user_id': result['user_id'],
+                'username': result['username']
+            }), 200
+        else:
+            return jsonify({
+                'status': 'error',
+                'message': result['message']
+            }), 401
+            
+    except Exception as e:
+        print(f"❌ Token 验证错误: {e}")
+        return jsonify({
+            'status': 'error',
+            'message': f'验证失败: {str(e)}'
+        }), 500
+
+
+# ⭐ 示例：需要登录的接口
+@app.route('/api/user/profile', methods=['GET'])
+@login_required
+def get_user_profile():
+    """
+    获取用户信息（需要登录）
+    """
+    try:
+        from models.user import User
+        user = User.query.get(g.user_id)
+        
+        if not user:
+            return jsonify({
+                'status': 'error',
+                'message': '用户不存在'
+            }), 404
+        
+        return jsonify({
+            'status': 'success',
+            'user': user.to_dict()
+        }), 200
+        
+    except Exception as e:
+        print(f"❌ 获取用户信息错误: {e}")
         return jsonify({
             'status': 'error',
             'message': str(e)
