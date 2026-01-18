@@ -16,16 +16,7 @@ export const chatAPI = {
     return response.data;
   },
 
-  // 发送普通消息（非流式）
-  async sendMessage(message, sessionId = null) {
-    const response = await api.post("/chat", {
-      message,
-      session_id: sessionId,
-    });
-    return response.data;
-  },
-
-  // ⭐⭐⭐ 新增：发送流式消息 ⭐⭐⭐
+  // ⭐⭐⭐ 发送流式消息 ⭐⭐⭐
   async sendMessageStream(message, sessionId, onChunk, onDone, onError) {
     try {
       const response = await fetch(`${API_BASE_URL}/chat/stream`, {

@@ -13,10 +13,10 @@ export const useChatStore = defineStore("chat", () => {
   ]);
 
   const isLoading = ref(false);
-  const isStreaming = ref(false); // ⭐ 新增：流式状态
-  const sessionId = ref(null); // ⭐ 新增：会话ID
-  const contextInfo = ref({ history_length: 0, max_context: 10 }); // ⭐ 新增：上下文信息
-  const streamingMessageIndex = ref(-1); // ⭐ 新增：正在流式输出的消息索引
+  const isStreaming = ref(false);
+  const sessionId = ref(null);
+  const contextInfo = ref({ history_length: 0, max_context: 10 });
+  const streamingMessageIndex = ref(-1);
 
   // ⭐ 计算属性：是否有上下文
   const hasContext = computed(() => contextInfo.value.history_length > 0);
@@ -94,52 +94,11 @@ export const useChatStore = defineStore("chat", () => {
           isStreaming.value = false;
           isLoading.value = false;
           streamingMessageIndex.value = -1;
-        }
+        },
       );
     } catch (error) {
       console.error("发送流式消息失败:", error);
       isStreaming.value = false;
-      isLoading.value = false;
-    }
-  }
-
-  // ⭐ 发送消息（普通，保持兼容）
-  async function sendMessage(userMessage) {
-    if (!userMessage.trim() || isLoading.value) return;
-
-    messages.value.push({
-      type: "user",
-      content: userMessage,
-      timestamp: new Date(),
-    });
-
-    isLoading.value = true;
-
-    try {
-      const response = await chatAPI.sendMessage(userMessage, sessionId.value);
-
-      if (response.status === "success") {
-        if (!sessionId.value) {
-          sessionId.value = response.session_id;
-        }
-
-        messages.value.push({
-          type: "bot",
-          content: response.bot_reply,
-          timestamp: new Date(),
-        });
-
-        await updateContextInfo();
-      } else {
-        throw new Error(response.message);
-      }
-    } catch (error) {
-      messages.value.push({
-        type: "bot",
-        content: `❌ 发送失败: ${error.message}`,
-        timestamp: new Date(),
-      });
-    } finally {
       isLoading.value = false;
     }
   }
@@ -207,8 +166,7 @@ export const useChatStore = defineStore("chat", () => {
     contextInfo,
     hasContext,
     contextUsage,
-    sendMessage,
-    sendMessageStream, // ⭐ 导出流式发送方法
+    sendMessageStream,
     clearContext,
     startNewSession,
     updateContextInfo,

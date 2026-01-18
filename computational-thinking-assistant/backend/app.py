@@ -73,46 +73,6 @@ def test_api():
         'streaming_enabled': Config.ENABLE_STREAMING
     })
 
-@app.route('/api/chat', methods=['POST'])
-def chat():
-    """普通聊天 API（非流式）"""
-    try:
-        data = request.get_json()
-        
-        if not data:
-            return jsonify({'status': 'error', 'message': '请求数据不能为空'}), 400
-        
-        user_message = data.get('message', '').strip()
-        session_id = data.get('session_id')
-        
-        if not user_message:
-            return jsonify({'status': 'error', 'message': '消息不能为空'}), 400
-        
-        if not Config.OPENAI_API_KEY:
-            return jsonify({'status': 'error', 'message': '未配置 OpenAI API 密钥'}), 500
-        
-        service = get_llm_service()
-        bot_reply = service.chat(user_message, session_id)
-        
-        return jsonify({
-            'status': 'success',
-            'user_message': user_message,
-            'bot_reply': bot_reply,
-            'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-            'model': Config.OPENAI_MODEL,
-            'session_id': session_id or str(uuid.uuid4())
-        })
-        
-    except Exception as e:
-        print(f"❌ 处理聊天请求时出错: {str(e)}")
-        import traceback
-        traceback.print_exc()
-        
-        return jsonify({
-            'status': 'error',
-            'message': f'处理请求时出错: {str(e)}'
-        }), 500
-
 # ⭐⭐⭐ 流式聊天 API ⭐⭐⭐
 @app.route('/api/chat/stream', methods=['POST'])
 def chat_stream():

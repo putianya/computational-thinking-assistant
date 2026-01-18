@@ -28,30 +28,6 @@ class LLMService:
         # 上下文存储
         self.conversation_history = {}
     
-    def chat(self, user_message, session_id=None):
-        """
-        普通对话（非流式）- 保持兼容
-        """
-        try:
-            messages = self._build_messages(user_message, session_id)
-            
-            response = self.client.chat.completions.create(
-                model=self.model,
-                messages=messages,
-                temperature=0.7,
-                max_tokens=2000
-            )
-            
-            reply = response.choices[0].message.content
-            
-            # 保存对话历史
-            self._save_history(session_id, user_message, reply)
-            
-            return reply
-            
-        except Exception as e:
-            raise Exception(f"AI 服务调用失败: {str(e)}")
-    
     def chat_stream(self, user_message, session_id=None):
         """
         ⭐ 流式对话生成器（完整错误处理版）
