@@ -95,6 +95,8 @@ def chat_stream():
             return jsonify({'status': 'error', 'message': '未配置 OpenAI API 密钥'}), 500
         
         # ⭐ 打印请求日志
+        import time
+        start_time = time.time()
         print(f"📨 收到流式请求: {user_message[:50]}...")
         
         service = get_llm_service()
@@ -105,9 +107,16 @@ def chat_stream():
                 # ⭐ 发送会话ID
                 yield f"data: {json.dumps({'type': 'session', 'session_id': session_id}, ensure_ascii=False)}\n\n"
                 
+                # ⭐ 记录首字节时间
+                first_chunk_time = None
+                
                 # ⭐ 逐块发送内容
                 chunk_count = 0
                 for content in service.chat_stream(user_message, session_id):
+                    if chunk_count == 0:
+                        first_chunk_time = time.time()
+                        print(f"⚡ 首字节延迟: {first_chunk_time - start_time:.2f}秒")
+                    
                     chunk_count += 1
                     chunk_data = json.dumps({
                         'type': 'content',
@@ -119,7 +128,8 @@ def chat_stream():
                 yield f"data: {json.dumps({'type': 'done'}, ensure_ascii=False)}\n\n"
                 
                 # ⭐ 打印完成日志
-                print(f"✅ 流式响应完成: 共 {chunk_count} 个块")
+                total_time = time.time() - start_time
+                print(f"✅ 流式响应完成: 共 {chunk_count} 个块，总耗时 {total_time:.2f}秒")
                 
             except Exception as e:
                 print(f"❌ 流式生成错误: {str(e)}")

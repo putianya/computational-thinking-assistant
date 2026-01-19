@@ -22,7 +22,9 @@ class LLMService:
         self.client = OpenAI(
             api_key=Config.OPENAI_API_KEY,
             base_url=Config.OPENAI_BASE_URL,
-            default_headers=extra_headers if extra_headers else None
+            default_headers=extra_headers if extra_headers else None,
+            timeout=30.0,
+            max_retries=2
         )
         self.model = Config.OPENAI_MODEL
         # 上下文存储
@@ -38,9 +40,10 @@ class LLMService:
             stream = self.client.chat.completions.create(
                 model=self.model,
                 messages=messages,
-                temperature=0.7,
-                max_tokens=2000,
-                stream=True
+                temperature=0.3,
+                max_tokens=1000,
+                stream=True,
+                timeout=30.0
             )
             
             full_reply = ""
