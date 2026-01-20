@@ -4,7 +4,7 @@
 """
 from datetime import datetime
 from database import db
-
+from models.chat_message import ChatMessage
 
 class ChatSession(db.Model):
     """
@@ -66,7 +66,7 @@ class ChatSession(db.Model):
         Returns:
             ChatMessage: 新创建的消息对象
         """
-        from models.chat_message import ChatMessage
+        
         from config import Config  # ⭐ 在方法内部导入，避免初始化时的循环引用
         
         # 1. 创建新消息
@@ -131,33 +131,61 @@ class ChatSession(db.Model):
         
         return result
     
+    def clear_messages(self):
+        """
+        清空会话的所有消息
+        """
+        try:
+            ChatMessage.query.filter_by(session_id=self.id).delete()
+            
+            self.message_count = 0
+            self.updated_at = datetime.now()
+            
+            db.session.commit()
+            
+            print(f"🗑️ 清空会话消息: {self.session_id}")
+            
+        except Exception as e:
+            print(f"❌ 清空消息失败: {e}")
+            db.session.rollback()
+            raise
+    
     def set_active(self):
         """
         将当前会话设为活跃
         同时将同一用户的其他会话设为非活跃
-        """
-        ChatSession.query.filter_by(
-            user_id=self.user_id,
-            is_active=True
-        ).update({'is_active': False})
-        
-        self.is_active = True
-        db.session.commit()
-        
-        print(f"✅ 会话 {self.session_id} 已设为活跃")
     
-    def clear_messages(self):
+        ⭐ 使用逐个查询的方式，确保对象状态正确更新
         """
-        清除会话的所有消息
-        """
-        from models.chat_message import ChatMessage
-        
-        ChatMessage.query.filter_by(session_id=self.id).delete()
-        self.message_count = 0
-        self.updated_at = datetime.now()
-        db.session.commit()
-        
-        print(f"🗑️ 会话 {self.session_id} 的所有消息已清除")
+        try:
+            # ⭐⭐⭐ 方法1：逐个查询并更新（最可靠）⭐⭐⭐
+            # 查询该用户所有活跃会话
+            active_sessions = self.__class__.query.filter_by(
+                user_id=self.user_id,
+                is_active=True
+            ).all()
+            
+            # 逐个设为非活跃
+            for session in active_sessions:
+                if session.id != self.id:  # 排除当前会话
+                    session.is_active = False
+                    session.updated_at = datetime.now()
+            
+            # 设置当前会话为活跃
+            self.is_active = True
+            self.updated_at = datetime.now()
+            
+            # 一次性提交所有更改
+            db.session.commit()
+            
+            print(f"✅ 会话 {self.session_id} 已设为活跃")
+            
+        except Exception as e:
+            print(f"❌ 设置活跃会话失败: {e}")
+            import traceback
+            traceback.print_exc()
+            db.session.rollback()
+            raise
     
     def __repr__(self):
         return f'<ChatSession {self.session_id} - {self.title}>'

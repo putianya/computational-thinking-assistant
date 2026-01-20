@@ -94,29 +94,42 @@ export const useChatStore = defineStore("chat", () => {
 
   /**
    * 切换会话
+   * @param {string} targetSessionId - 目标会话ID
    */
-  async function switchSession(sessionId) {
+  async function switchSession(targetSessionId) {
     try {
-      console.log(`🔄 切换到会话: ${sessionId}`);
+      console.log("🔄 切换到会话:", targetSessionId);
 
-      const response = await chatAPI.activateSession(sessionId);
+      // 1. 调用 API 切换会话
+      const result = await chatAPI.activateSession(targetSessionId);
 
-      if (response.status === "success") {
-        // ⭐ 更新当前会话
-        currentSession.value = response.session;
-        this.sessionId = response.session.session_id;
-
-        // ⭐ 更新消息列表
-        messages.value = response.messages;
-
-        // ⭐ 更新会话列表中的 is_active 状态
-        sessions.value = sessions.value.map((s) => ({
-          ...s,
-          is_active: s.session_id === sessionId,
-        }));
-
-        console.log(`✅ 已切换到会话: ${response.session.title}`);
+      // 2. ⭐ 检查返回数据
+      if (!result || !result.session) {
+        console.error("❌ 切换会话失败: 返回数据无效", result);
+        throw new Error("切换会话失败：服务器返回数据无效");
       }
+
+      // 3. 更新当前会话信息
+      currentSession.value = result.session;
+      sessionId.value = result.session.session_id; // ⭐ 使用 session_id 而不是 sessionId
+
+      // 4. 更新消息列表
+      messages.value = result.messages || [];
+
+      // 5. 清空当前回复
+      currentReply.value = "";
+
+      // 6. 更新会话列表中的 is_active 状态
+      sessions.value = sessions.value.map((s) => ({
+        ...s,
+        is_active: s.session_id === targetSessionId,
+      }));
+
+      console.log("✅ 会话切换成功");
+      console.log("   当前会话:", currentSession.value);
+      console.log("   消息数量:", messages.value.length);
+
+      return true;
     } catch (error) {
       console.error("❌ 切换会话失败:", error);
       throw error;
@@ -158,24 +171,78 @@ export const useChatStore = defineStore("chat", () => {
 
   /**
    * 删除会话
+   * @param {string} sessionIdToDelete - 要删除的会话 ID
+   * @returns {Promise<boolean>} 删除是否成功
    */
   async function deleteSession(sessionIdToDelete) {
     try {
       console.log(`🗑️ 删除会话: ${sessionIdToDelete}`);
+      
+      const isCurrentSession = sessionId.value === sessionIdToDelete;
+      console.log(`   是否删除当前会话: ${isCurrentSession}`);
 
-      const response = await chatAPI.deleteSession(sessionIdToDelete);
+      // 1. 调用 API 删除
+      const result = await chatAPI.deleteSession(sessionIdToDelete);
 
-      if (response.status === "success") {
-        // ⭐ 从列表中移除
-        sessions.value = sessions.value.filter(
-          (s) => s.session_id !== sessionIdToDelete,
-        );
+      if (result.status === 'success') {
+        console.log('✅ 服务器删除成功');
 
-        console.log("✅ 会话已删除");
+        // 2. 从本地列表中移除
+        sessions.value = sessions.value.filter(s => s.session_id !== sessionIdToDelete);
+        console.log(`   删除后剩余会话数: ${sessions.value.length}`);
+
+        // 3. 如果删除的是当前会话，需要切换或清空
+        if (isCurrentSession) {
+          console.log('⚠️ 删除的是当前会话');
+
+          // 3.1 如果还有其他会话，切换到第一个
+          if (sessions.value.length > 0) {
+            console.log('🔄 切换到下一个会话');
+            const nextSession = sessions.value[0];
+            
+            try {
+              await switchSession(nextSession.session_id);
+            } catch (switchError) {
+              console.error('❌ 切换会话失败:', switchError);
+              
+              // 手动设置当前会话
+              currentSession.value = nextSession;
+              sessionId.value = nextSession.session_id;
+              
+              // 重新加载消息
+              try {
+                const msgs = await chatAPI.getSessionMessages(nextSession.session_id);
+                messages.value = msgs;
+              } catch (msgError) {
+                console.error('❌ 加载消息失败:', msgError);
+                messages.value = [];
+              }
+            }
+          }
+          // ⭐⭐⭐ 修改：删除所有会话后，显示空白页（不自动创建新会话）⭐⭐⭐
+          else {
+            console.log('📭 所有会话已删除，显示空白页');
+            
+            // 清空状态
+            currentSession.value = null;
+            sessionId.value = null;
+            messages.value = [];
+            currentReply.value = '';
+            
+            // ⭐ 提示用户点击"新对话"按钮创建会话
+            console.log('💡 提示：点击"新对话"按钮创建新会话');
+          }
+        } else {
+          console.log('✅ 删除的是其他会话，无需切换');
+        }
+
+        return true;
+      } else {
+        throw new Error(result.message || '删除失败');
       }
     } catch (error) {
-      console.error("❌ 删除会话失败:", error);
-      throw error;
+      console.error('❌ 删除失败:', error);
+      return false;
     }
   }
 

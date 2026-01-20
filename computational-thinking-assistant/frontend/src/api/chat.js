@@ -185,15 +185,64 @@ export const chatAPI = {
   /**
    * 删除会话
    * @param {string} sessionId - 会话 ID
-   * @returns {Promise<{status: string, message: string}>}
+   * @returns {Promise<{status: string, message: string, new_session?: Object}>}
+   * @throws {Error} 删除失败时抛出错误
    */
   async deleteSession(sessionId) {
     try {
-      const response = await api.delete(`/sessions/${sessionId}`);
+      // ⭐ 1. 显式检查 Token
+      const token = localStorage.getItem("token");
+      if (!token) {
+        throw new Error("请先登录");
+      }
+
+      // ⭐ 2. 显式添加 Authorization 头（更安全）
+      const response = await api.delete(`/sessions/${sessionId}`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      // ⭐ 3. 返回完整的响应数据
       return response.data;
     } catch (error) {
-      console.error("❌ 删除会话失败:", error);
-      throw error;
+      // ⭐ 4. 详细的错误处理
+      if (error.response) {
+        const status = error.response.status;
+        const message = error.response.data?.message || "删除会话失败";
+
+        switch (status) {
+          case 401:
+            console.error("❌ 未授权：Token 可能已失效");
+            // 可以触发重新登录
+            localStorage.removeItem("token");
+            throw new Error("登录已过期，请重新登录");
+
+          case 403:
+            console.error("❌ 权限不足：无法删除其他用户的会话");
+            throw new Error("无权删除此会话");
+
+          case 404:
+            console.error("❌ 会话不存在");
+            throw new Error("会话不存在或已被删除");
+
+          case 500:
+            console.error("❌ 服务器错误:", message);
+            throw new Error("服务器错误，请稍后重试");
+
+          default:
+            console.error("❌ 删除会话失败:", message);
+            throw new Error(message);
+        }
+      } else if (error.request) {
+        // 请求已发送但未收到响应
+        console.error("❌ 网络错误：未收到服务器响应");
+        throw new Error("网络连接失败，请检查网络");
+      } else {
+        // 其他错误
+        console.error("❌ 删除会话失败:", error.message);
+        throw error;
+      }
     }
   },
 };

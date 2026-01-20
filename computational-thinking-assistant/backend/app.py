@@ -13,6 +13,8 @@ from config import Config
 from datetime import datetime
 from database import db, init_db
 from services.auth_service import AuthService
+from services.chat_service import ChatService  # ⭐ 确保这行存在！
+from services.llm_service import LLMService
 from utils.decorators import login_required
 from flask import g
 
@@ -278,34 +280,46 @@ def get_session_messages_route(session_id):
 @app.route('/api/sessions/<session_id>/activate', methods=['POST'])
 @login_required
 def activate_session(session_id):
-    """
-    切换到指定会话
-    
-    响应：
-    {
-        "status": "success",
-        "session": {...},
-        "messages": [...]
-    }
-    """
+    """激活指定会话"""
     try:
-        from services.chat_service import ChatService
+        user_id = g.user_id
         
-        result = ChatService.switch_session(g.user_id, session_id)
+        print(f"\n{'='*60}")
+        print(f"🔄 激活会话请求")
+        print(f"   用户ID: {user_id}")
+        print(f"   会话ID: {session_id}")
+        
+        # 调用服务层
+        result = ChatService.switch_session(user_id, session_id)
+        
+        print(f"✅ 会话激活成功")
+        print(f"{'='*60}\n")
         
         return jsonify({
             'status': 'success',
-            **result  # 包含 session 和 messages
+            'session': result['session'],
+            'messages': result['messages']
         }), 200
         
     except ValueError as e:
-        # 会话不存在或无权访问
-        return jsonify({'status': 'error', 'message': str(e)}), 404
+        print(f"❌ 会话不存在: {str(e)}")
+        print(f"{'='*60}\n")
+        
+        return jsonify({
+            'status': 'error',
+            'message': str(e)
+        }), 404
+        
     except Exception as e:
-        print(f"❌ 切换会话失败: {e}")
+        print(f"❌ 激活会话失败: {str(e)}")
         import traceback
         traceback.print_exc()
-        return jsonify({'status': 'error', 'message': f'切换会话失败: {str(e)}'}), 500
+        print(f"{'='*60}\n")
+        
+        return jsonify({
+            'status': 'error',
+            'message': f'激活会话失败: {str(e)}'
+        }), 500
 
 @app.route('/api/sessions/new', methods=['POST'])
 @login_required
@@ -326,7 +340,7 @@ def create_new_session():
         
         return jsonify({
             'status': 'success',
-            'session': new_session.to_dict(include_messages=False)
+            'session': new_session
         }), 201
         
     except Exception as e:
@@ -339,57 +353,62 @@ def create_new_session():
 @login_required
 def delete_session_route(session_id):
     """
-    删除指定会话及其所有消息
-    
-    注意：不能删除当前活跃会话
-    
-    响应：
-    {
-        "status": "success",
-        "message": "会话已删除"
-    }
+    删除指定会话
     """
     try:
-        from services.chat_service import ChatService
-        from models.chat_session import ChatSession
+        user_id = g.user_id
         
-        # 检查是否为活跃会话
-        session = ChatSession.query.filter_by(
-            session_id=session_id,
-            user_id=g.user_id
-        ).first()
+        print(f"\n{'='*60}")
+        print(f"🗑️ 删除会话请求")
+        print(f"   用户ID: {user_id}")
+        print(f"   会话ID: {session_id}")
         
+        # 1. 验证会话所有权
+        session = ChatService.get_session_detail(session_id, user_id)
         if not session:
+            print(f"❌ 会话不存在或无权访问")
+            print(f"{'='*60}\n")
+            
             return jsonify({
                 'status': 'error',
                 'message': '会话不存在或无权访问'
             }), 404
         
-        if session.is_active:
-            return jsonify({
-                'status': 'error',
-                'message': '不能删除当前活跃会话，请先切换到其他会话'
-            }), 400
+        print(f"   会话标题: {session.title}")
+        print(f"   是否活跃: {session.is_active}")
         
-        # 删除会话
-        success = ChatService.delete_session(g.user_id, session_id)
+        # 2. 直接删除会话
+        print(f"🗑️ 执行删除操作...")
+        success = ChatService.delete_session(session_id, user_id)
         
         if success:
+            print(f"✅ 会话删除成功")
+            print(f"{'='*60}\n")
+            
+            # ⭐ 简化返回：不再返回新会话信息
             return jsonify({
                 'status': 'success',
                 'message': '会话已删除'
             }), 200
         else:
+            print(f"❌ 删除失败")
+            print(f"{'='*60}\n")
+            
             return jsonify({
                 'status': 'error',
-                'message': '删除失败'
+                'message': '删除会话失败'
             }), 500
-        
+            
     except Exception as e:
-        print(f"❌ 删除会话失败: {e}")
+        print(f"❌ 删除会话异常: {str(e)}")
         import traceback
         traceback.print_exc()
-        return jsonify({'status': 'error', 'message': f'删除会话失败: {str(e)}'}), 500
+        print(f"{'='*60}\n")
+        
+        return jsonify({
+            'status': 'error',
+            'message': f'删除会话时发生错误: {str(e)}'
+        }), 500
 
 # ========== 认证相关路由 ==========
 
