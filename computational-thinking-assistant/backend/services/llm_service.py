@@ -1,11 +1,19 @@
 # -*- coding: utf-8 -*-
 """
-大语言模型服务 - 支持流式输出和上下文管理
+大语言模型服务 - 只负责调用 AI（不管理上下文）
 """
 from openai import OpenAI
 from config import Config
+from services.chat_service import ChatService
+
 
 class LLMService:
+    """
+    LLM 服务类
+    职责：只负责调用 OpenAI API
+    不负责：上下文管理、消息存储（由 ChatService 负责）
+    """
+    
     def __init__(self):
         """初始化 OpenAI 客户端"""
         # ⭐ 针对特定 API 的请求头配置
@@ -27,58 +35,76 @@ class LLMService:
             max_retries=2
         )
         self.model = Config.OPENAI_MODEL
-        # 上下文存储
-        self.conversation_history = {}
+        
+        # ⭐ 删除：不再在内存中管理上下文
+        # self.conversation_history = {}  # ❌ 已删除
     
-    def chat_stream(self, user_message, session_id=None):
+    def chat_stream(self, user_message, session_id=None, max_context=None):
         """
-        ⭐ 流式对话生成器（完整错误处理版）
+        流式对话生成器
+        
+        Args:
+            user_message: 用户消息
+            session_id: 会话 ID（字符串）
+            max_context: 上下文长度（默认使用配置值）
+        
+        Yields:
+            str: AI 回复的文本块
+        
+        改进：
+        1. ✅ 从数据库获取上下文（而非内存）
+        2. ✅ 调用 ChatService 保存消息
+        3. ✅ 支持可变上下文长度
         """
         try:
-            messages = self._build_messages(user_message, session_id)
+            # ⭐ 1. 先保存用户消息到数据库
+            if session_id:
+                ChatService.save_message(session_id, 'user', user_message)
+                print(f"💾 用户消息已保存: {user_message[:30]}...")
             
+            # ⭐ 2. 从数据库获取上下文（而非内存）
+            context_limit = max_context or Config.MAX_CONTEXT_FOR_AI
+            messages = self._build_messages(user_message, session_id, context_limit)
+            
+            print(f"🧠 构建上下文: {len(messages)} 条消息 (限制: {context_limit} 轮)")
+            
+            # ⭐ 3. 调用 OpenAI API
             stream = self.client.chat.completions.create(
                 model=self.model,
                 messages=messages,
-                temperature=0.3,
-                max_tokens=1000,
+                temperature=Config.TEMPERATURE,
+                max_tokens=Config.MAX_TOKENS,
                 stream=True,
                 timeout=30.0
             )
             
             full_reply = ""
             
-            # ⭐ 逐块返回内容（完整的安全检查）
+            # ⭐ 4. 逐块返回内容
             for chunk in stream:
-                # 检查 chunk 是否有 choices 属性
-                if not hasattr(chunk, 'choices'):
+                # 安全检查
+                if not hasattr(chunk, 'choices') or not chunk.choices:
                     continue
                 
-                # 检查 choices 是否为空
-                if not chunk.choices or len(chunk.choices) == 0:
-                    continue
-                
-                # 安全获取第一个 choice
                 choice = chunk.choices[0]
                 
-                # 检查是否有 delta
                 if not hasattr(choice, 'delta'):
                     continue
                 
                 delta = choice.delta
                 
-                # 检查 delta 是否有 content
                 if not hasattr(delta, 'content') or delta.content is None:
                     continue
                 
-                # ⭐ 到这里才是真正的内容
+                # ⭐ 返回内容块
                 content = delta.content
                 full_reply += content
                 yield content
             
-            # 完成后保存历史
-            if full_reply:
-                self._save_history(session_id, user_message, full_reply)
+            # ⭐ 5. 流式结束后，保存 AI 回复到数据库
+            if full_reply and session_id:
+                ChatService.save_message(session_id, 'assistant', full_reply)
+                print(f"💾 AI 回复已保存: {full_reply[:30]}... (共 {len(full_reply)} 字符)")
             
         except Exception as e:
             error_msg = f"\n\n❌ 流式生成错误: {str(e)}"
@@ -87,60 +113,60 @@ class LLMService:
             traceback.print_exc()
             yield error_msg
     
-    def _build_messages(self, user_message, session_id):
+    def _build_messages(self, user_message, session_id, max_context):
         """
-        构建消息列表（包含系统提示词和历史上下文）
+        构建发送给 AI 的消息列表
+        
+        Args:
+            user_message: 当前用户消息
+            session_id: 会话 ID
+            max_context: 上下文长度（轮数）
+        
+        Returns:
+            list: OpenAI API 格式的消息列表
+            [
+                {"role": "system", "content": "..."},
+                {"role": "user", "content": "..."},
+                {"role": "assistant", "content": "..."},
+                ...
+            ]
+        
+        改进：
+        ✅ 从数据库获取上下文（而非内存）
+        ✅ 不包含当前用户消息（已在数据库中保存）
         """
         messages = [
             {"role": "system", "content": Config.SYSTEM_PROMPT}
         ]
         
-        # 添加历史上下文
-        if session_id and session_id in self.conversation_history:
-            history = self.conversation_history[session_id]
-            # 只保留最近N轮对话
-            recent_history = history[-(Config.MAX_CONTEXT_MESSAGES * 2):]
-            messages.extend(recent_history)
+        # ⭐ 从数据库获取历史上下文（而非 self.conversation_history）
+        if session_id:
+            # 获取最近 N 条消息（不包含刚保存的用户消息）
+            context = ChatService.get_context_for_ai(session_id, limit=max_context)
+            
+            if context:
+                messages.extend(context)
+                print(f"📜 加载历史上下文: {len(context)} 条消息")
         
-        # 添加当前用户消息
+        # ⭐ 注意：当前用户消息已在 chat_stream 开头保存到数据库
+        # 但 OpenAI API 仍需要包含它
         messages.append({"role": "user", "content": user_message})
         
         return messages
     
-    def _save_history(self, session_id, user_message, bot_reply):
-        """
-        保存对话历史
-        """
-        if not session_id:
-            return
-        
-        if session_id not in self.conversation_history:
-            self.conversation_history[session_id] = []
-        
-        self.conversation_history[session_id].extend([
-            {"role": "user", "content": user_message},
-            {"role": "assistant", "content": bot_reply}
-        ])
-        
-        # 限制历史长度
-        max_pairs = Config.MAX_CONTEXT_MESSAGES
-        if len(self.conversation_history[session_id]) > max_pairs * 2:
-            self.conversation_history[session_id] = \
-                self.conversation_history[session_id][-(max_pairs * 2):]
+    # ⭐⭐⭐ 删除以下方法（已移到 ChatService）⭐⭐⭐
     
-    def clear_history(self, session_id):
-        """
-        清除会话历史
-        """
-        if session_id in self.conversation_history:
-            del self.conversation_history[session_id]
-            return True
-        return False
+    # ❌ 删除：_save_history()
+    # def _save_history(self, session_id, user_message, bot_reply):
+    #     """不再需要：由 ChatService.save_message() 替代"""
+    #     pass
     
-    def get_history_length(self, session_id):
-        """
-        获取历史消息数量
-        """
-        if session_id in self.conversation_history:
-            return len(self.conversation_history[session_id]) // 2
-        return 0
+    # ❌ 删除：clear_history()
+    # def clear_history(self, session_id):
+    #     """不再需要：由 ChatService.clear_messages() 替代"""
+    #     pass
+    
+    # ❌ 删除：get_history_length()
+    # def get_history_length(self, session_id):
+    #     """不再需要：由 ChatService.get_session_messages() 替代"""
+    #     pass

@@ -5,10 +5,10 @@ from openai import OpenAI
 from config import Config
 
 def test_github_copilot():
-    """测试 GitHub Copilot API"""
+    """测试 DeepSeek API"""
     
     print("=" * 60)
-    print("🧪 测试 GitHub Copilot API")
+    print("🧪 测试 DeepSeek API")
     print("=" * 60)
     print(f"📍 Base URL: {Config.OPENAI_BASE_URL}")
     print(f"🔑 API Key: {Config.OPENAI_API_KEY[:20]}...")
@@ -27,21 +27,21 @@ def test_github_copilot():
             }
         )
         
-        print("✅ 客户端创建成功")
+        # print("✅ 客户端创建成功")
         
-        # 测试普通请求
-        print("\n📤 发送测试请求（普通模式）...")
-        response = client.chat.completions.create(
-            model=Config.OPENAI_MODEL,
-            messages=[
-                {"role": "system", "content": "你是一个编程助手。"},
-                {"role": "user", "content": "说一句话测试"}
-            ],
-            max_tokens=50
-        )
+        # # 测试普通请求
+        # print("\n📤 发送测试请求（普通模式）...")
+        # response = client.chat.completions.create(
+        #     model=Config.OPENAI_MODEL,
+        #     messages=[
+        #         {"role": "system", "content": "你是一个编程助手。"},
+        #         {"role": "user", "content": "说一句话测试"}
+        #     ],
+        #     max_tokens=50
+        # )
         
-        print(f"✅ 普通请求成功！")
-        print(f"📥 回复: {response.choices[0].message.content}")
+        # print(f"✅ 普通请求成功！")
+        # print(f"📥 回复: {response.choices[0].message.content}")
         
         # 测试流式请求
         print("\n📤 发送测试请求（流式模式）...")

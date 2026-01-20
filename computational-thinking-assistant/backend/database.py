@@ -17,10 +17,15 @@ def init_db(app):
     db.init_app(app)
     
     with app.app_context():
-        # 导入所有模型（确保表被创建）
+        # ⭐ 导入所有模型（确保表被创建）
         from models.user import User
         from models.chat_session import ChatSession
+        from models.chat_message import ChatMessage  # ⭐ 新增
         
         # 创建所有表
         db.create_all()
         print("✅ 数据库初始化完成")
+        
+        # 打印表信息
+        tables = db.metadata.tables.keys()
+        print(f"📊 已创建的表: {', '.join(tables)}")
