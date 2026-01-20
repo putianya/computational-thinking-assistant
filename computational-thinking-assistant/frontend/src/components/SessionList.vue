@@ -372,7 +372,7 @@ function formatTime(timestamp) {
 
 /* 删除按钮悬停效果 */
 .delete-btn:hover {
-  background: #ffe5e8;
+  background: #cc0000;
   transform: scale(1.1);
 }
 
