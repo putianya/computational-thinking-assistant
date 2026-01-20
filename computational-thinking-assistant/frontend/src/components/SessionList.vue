@@ -28,7 +28,32 @@
             <i class="fas fa-comment-dots"></i>
           </div>
           <div class="session-content">
-            <div class="session-title">{{ session.title || "新对话" }}</div>
+            <!-- ⭐ 修改：标题可编辑 -->
+            <div class="session-title-wrapper">
+              <!-- 正常显示模式 -->
+              <div
+                v-if="editingSessionId !== session.session_id"
+                class="session-title"
+                :title="session.title || '新对话'"
+              >
+                {{ session.title || "新对话" }}
+              </div>
+
+              <!-- 编辑模式 -->
+              <input
+                v-else
+                ref="titleInput"
+                v-model="editingTitle"
+                type="text"
+                class="session-title-input"
+                maxlength="50"
+                @click.stop
+                @keyup.enter="confirmRename(session.session_id)"
+                @keyup.esc="cancelRename"
+                @blur="confirmRename(session.session_id)"
+              />
+            </div>
+
             <div class="session-meta">
               <span class="session-time">{{
                 formatTime(session.updated_at)
@@ -40,14 +65,26 @@
           </div>
         </div>
 
-        <!-- 删除按钮 -->
-        <button
-          class="delete-btn"
-          @click.stop="handleDeleteSession(session.session_id)"
-          title="删除此会话"
-        >
-          <i class="fas fa-trash-alt"></i>
-        </button>
+        <!-- ⭐ 修改：操作按钮区域 -->
+        <div class="session-actions" @click.stop>
+          <!-- 重命名按钮 -->
+          <button
+            class="action-btn rename-btn"
+            @click="startRename(session.session_id, session.title)"
+            title="重命名"
+          >
+            <i class="fas fa-edit"></i>
+          </button>
+
+          <!-- 删除按钮 -->
+          <button
+            class="action-btn delete-btn"
+            @click="handleDeleteSession(session.session_id)"
+            title="删除"
+          >
+            <i class="fas fa-trash-alt"></i>
+          </button>
+        </div>
       </div>
 
       <!-- 空状态：无会话时显示 -->
@@ -75,7 +112,7 @@
 </template>
 
 <script setup>
-import { computed, ref } from "vue";
+import { computed, ref, nextTick } from "vue";
 import { useChatStore } from "../stores/chat";
 import ConfirmDialog from "./ConfirmDialog.vue";
 
@@ -90,7 +127,11 @@ const showDeleteConfirm = ref(false);
 const sessionToDelete = ref(null);
 const isDeleting = ref(false);
 
-// ========== 方法 ==========
+// 重命名相关状态
+const editingSessionId = ref(null);
+const editingTitle = ref("");
+const titleInput = ref(null);
+const isRenaming = ref(false); // ⭐ 新增：防止重复提交
 
 /**
  * 判断是否为当前会话
@@ -167,6 +208,94 @@ async function confirmDelete() {
 function cancelDelete() {
   showDeleteConfirm.value = false;
   sessionToDelete.value = null;
+}
+
+/**
+ * ⭐ 新增：开始重命名
+ */
+function startRename(sessionId, currentTitle) {
+  editingSessionId.value = sessionId;
+  editingTitle.value = currentTitle || "新对话";
+
+  // 下一帧聚焦并选中文本
+  nextTick(() => {
+    if (titleInput.value && titleInput.value[0]) {
+      const input = titleInput.value[0];
+      input.focus();
+      input.select();
+    }
+  });
+}
+
+/**
+ * ⭐ 修复：确认重命名
+ */
+async function confirmRename(sessionId) {
+  // ⭐ 1. 防止重复提交
+  if (isRenaming.value) {
+    console.log("⚠️ 正在重命名中，忽略重复请求");
+    return;
+  }
+
+  // ⭐ 2. 验证标题
+  const trimmedTitle = editingTitle.value.trim();
+
+  if (!trimmedTitle) {
+    console.warn("⚠️ 标题为空，忽略重命名");
+    // 直接取消编辑，不弹窗提示
+    cancelRename();
+    return;
+  }
+
+  if (trimmedTitle.length > 50) {
+    alert("标题长度不能超过50字符");
+    return;
+  }
+
+  // ⭐ 3. 检查标题是否有变化
+  const originalSession = sessions.value.find(
+    (s) => s.session_id === sessionId,
+  );
+  if (originalSession && originalSession.title === trimmedTitle) {
+    console.log("✅ 标题未改变，无需重命名");
+    cancelRename();
+    return;
+  }
+
+  // ⭐ 4. 执行重命名
+  try {
+    isRenaming.value = true; // 设置标记
+    console.log(`✏️ 重命名会话: ${sessionId} -> ${trimmedTitle}`);
+
+    const success = await chatStore.renameSession(sessionId, trimmedTitle);
+
+    if (success) {
+      console.log("✅ 重命名成功");
+    } else {
+      alert("重命名失败，请重试");
+    }
+  } catch (error) {
+    console.error("❌ 重命名失败:", error);
+    alert("重命名失败: " + (error.message || "未知错误"));
+  } finally {
+    // ⭐ 5. 退出编辑模式
+    isRenaming.value = false;
+    editingSessionId.value = null;
+    editingTitle.value = "";
+  }
+}
+
+/**
+ * ⭐ 修复：取消重命名
+ */
+function cancelRename() {
+  if (isRenaming.value) {
+    console.log("⚠️ 正在重命名中，忽略取消请求");
+    return;
+  }
+
+  editingSessionId.value = null;
+  editingTitle.value = "";
 }
 
 /**
@@ -324,6 +453,14 @@ function formatTime(timestamp) {
   min-width: 0;
 }
 
+.session-title-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+}
+
 .session-title {
   font-size: 14px;
   font-weight: 500;
@@ -332,6 +469,24 @@ function formatTime(timestamp) {
   overflow: hidden;
   text-overflow: ellipsis;
   margin-bottom: 4px;
+  flex: 1;
+}
+
+.session-title-input {
+  width: 100%;
+  padding: 4px 8px;
+  font-size: 14px;
+  font-weight: 500;
+  border: 2px solid #667eea;
+  border-radius: 4px;
+  outline: none;
+  background: white;
+  color: #333;
+}
+
+.session-title-input:focus {
+  border-color: #764ba2;
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
 }
 
 .session-meta {
@@ -414,5 +569,42 @@ function formatTime(timestamp) {
   margin: 0;
   font-size: 14px;
   color: #999;
+}
+
+/* ========== 操作按钮区域 ========== */
+.session-actions {
+  display: flex;
+  gap: 4px;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.session-item:hover .session-actions {
+  opacity: 1;
+}
+
+.action-btn {
+  padding: 6px 8px;
+  background: transparent;
+  border: none;
+  color: #999;
+  font-size: 14px;
+  cursor: pointer;
+  border-radius: 4px;
+  transition: all 0.2s ease;
+}
+
+.action-btn:hover {
+  transform: scale(1.1);
+}
+
+.rename-btn:hover {
+  background: #667eea;
+  color: white;
+}
+
+.delete-btn:hover {
+  background: #ff4757;
+  color: white;
 }
 </style>

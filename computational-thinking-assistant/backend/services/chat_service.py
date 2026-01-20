@@ -264,37 +264,29 @@ class ChatService:
     # ========== 功能 7：获取 AI 上下文 ==========
     
     @staticmethod
-    def get_context_for_ai(session_id, limit=10):
+    def get_context_for_ai(session_id, limit=None):
         """
         获取发送给 AI 的上下文消息（OpenAI API 格式）
         
         Args:
             session_id: 会话 session_id（字符串）
-            limit: 上下文长度（默认10条）
+            limit: ⭐ 已废弃，永远返回全部消息
         
         Returns:
             list: OpenAI 格式的消息列表
-            [
-                {"role": "user", "content": "..."},
-                {"role": "assistant", "content": "..."},
-            ]
-        
-        为什么单独写这个函数？
-        └─ AI 只需要最近 N 条消息
-           和展示给用户的可能不一样（用户看50条，AI看10条）
         """
         try:
             # 查找会话
             session = ChatSession.query.filter_by(session_id=session_id).first()
             
             if not session:
-                print(f"⚠️ 会话不存在: {session_id}，返回空上下文")
+                print(f"⚠️ 会话不存在: {session_id}")
                 return []
             
-            # 获取最近 N 条消息
-            messages = session.get_messages(limit=limit)
+            # ⭐⭐⭐ 修改：获取全部消息（不再限制） ⭐⭐⭐
+            messages = session.get_messages(limit=None)  # ⭐ 传入 None 表示全部
             
-            # 转换为 OpenAI API 格式（只保留 role 和 content）
+            # 转换为 OpenAI API 格式
             context = [
                 {
                     'role': msg['role'],
@@ -303,7 +295,7 @@ class ChatService:
                 for msg in messages
             ]
             
-            print(f"🧠 获取 AI 上下文: {session_id} (最近 {len(context)} 条消息)")
+            print(f"🧠 获取 AI 上下文: {session_id} (全部 {len(context)} 条消息)")
             
             return context
             
@@ -380,6 +372,49 @@ class ChatService:
             import traceback
             traceback.print_exc()
             return False
+    
+    # ⭐ 新增：重命名会话方法
+    @staticmethod
+    def rename_session(session_id, user_id, new_title):
+        """
+        重命名会话
+        
+        Args:
+            session_id: 会话ID
+            user_id: 用户ID
+            new_title: 新标题
+            
+        Returns:
+            ChatSession: 更新后的会话对象，如果失败返回 None
+        """
+        try:
+            # 验证会话所有权
+            session = ChatSession.query.filter_by(
+                session_id=session_id,
+                user_id=user_id
+            ).first()
+            
+            if not session:
+                print(f"❌ 会话不存在或无权修改: {session_id}")
+                return None
+            
+            # 更新标题
+            old_title = session.title
+            session.title = new_title
+            session.updated_at = datetime.now()
+            
+            db.session.commit()
+            
+            print(f"✅ 会话重命名成功: '{old_title}' -> '{new_title}'")
+            
+            return session
+            
+        except Exception as e:
+            db.session.rollback()
+            print(f"❌ 重命名会话失败: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return None
     
     @staticmethod
     def archive_and_create_new(user_id):

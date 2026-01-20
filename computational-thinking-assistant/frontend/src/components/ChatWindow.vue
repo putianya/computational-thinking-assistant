@@ -16,23 +16,25 @@
           <p v-else>与 AI 助手交流,获取编程学习帮助</p>
         </div>
 
-        <!-- ⭐ 上下文信息显示 -->
+        <!-- ⭐⭐⭐ 修改：上下文信息显示 ⭐⭐⭐ -->
         <div class="context-info" v-if="chatStore.hasMessages">
           <div class="context-badge">
             <span class="badge-icon">🧠</span>
             <span class="badge-text">
-              上下文: {{ chatStore.currentContextLength }}/{{
-                chatStore.maxContextLength
-              }}
+              <!-- ⭐ 修改：显示对话轮数，无上限 -->
+              上下文: {{ chatStore.currentContextLength }}
             </span>
           </div>
-          <div class="context-bar">
+
+          <!-- ❌ 删除：进度条（不再需要） -->
+          <!-- <div class="context-bar">
             <div
               class="context-fill"
               :style="{ width: contextUsagePercent + '%' }"
               :class="{ warning: contextUsagePercent > 80 }"
             ></div>
-          </div>
+          </div> -->
+
           <button
             class="clear-context-btn"
             @click="handleClearContext"
@@ -75,24 +77,20 @@
 import { ref, computed, watch, nextTick, onMounted } from "vue";
 import { useChatStore } from "../stores/chat";
 import SessionList from "./SessionList.vue";
-import ChatMessage from "./ChatMessage.vue"; // ⭐ 正确的组件名
-import ChatInput from "./ChatInput.vue"; // ⭐ 正确的组件名
+import ChatMessage from "./ChatMessage.vue";
+import ChatInput from "./ChatInput.vue";
 
 const chatStore = useChatStore();
 const messagesContainer = ref(null);
 
-// ========== 计算属性 ==========
-
-/**
- * 上下文使用百分比
- */
-const contextUsagePercent = computed(() => {
-  if (chatStore.maxContextLength === 0) return 0;
-  return Math.min(
-    100,
-    (chatStore.currentContextLength / chatStore.maxContextLength) * 100,
-  );
-});
+// ❌ 删除：上下文使用百分比计算
+// const contextUsagePercent = computed(() => {
+//   if (chatStore.maxContextLength === 0) return 0;
+//   return Math.min(
+//     100,
+//     (chatStore.currentContextLength / chatStore.maxContextLength) * 100,
+//   );
+// });
 
 // ========== 生命周期 ==========
 
@@ -245,25 +243,10 @@ async function handleClearContext() {
   font-size: 18px;
 }
 
-.context-bar {
-  width: 100px;
-  height: 6px;
-  background: rgba(255, 255, 255, 0.2);
-  border-radius: 3px;
-  overflow: hidden;
-}
-
-.context-fill {
-  height: 100%;
-  background: linear-gradient(90deg, #4ade80, #22d3ee);
-  transition: width 0.3s ease;
-  box-shadow: 0 0 8px rgba(74, 222, 128, 0.6);
-}
-
-.context-fill.warning {
-  background: linear-gradient(90deg, #fbbf24, #f97316);
-  box-shadow: 0 0 8px rgba(251, 191, 36, 0.6);
-}
+/* ❌ 删除：进度条样式（不再需要） */
+/* .context-bar { ... } */
+/* .context-fill { ... } */
+/* .context-fill.warning { ... } */
 
 .clear-context-btn {
   padding: 6px 14px;

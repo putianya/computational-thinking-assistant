@@ -13,7 +13,7 @@ from config import Config
 from datetime import datetime
 from database import db, init_db
 from services.auth_service import AuthService
-from services.chat_service import ChatService  # ⭐ 确保这行存在！
+from services.chat_service import ChatService
 from services.llm_service import LLMService
 from utils.decorators import login_required
 from flask import g
@@ -57,9 +57,8 @@ if os.environ.get('WERKZEUG_RUN_MAIN') == 'true':
     print(f"🔗 Base URL: {Config.OPENAI_BASE_URL}")
     print(f"🔑 API 密钥: {'已配置 ✓' if Config.OPENAI_API_KEY else '未配置 ✗'}")
     print(f"⚡ 流式输出: {'启用 ✓' if Config.ENABLE_STREAMING else '禁用 ✗'}")
-    print(f"💬 默认上下文长度: {Config.MAX_CONTEXT_FOR_AI} 轮对话")
-    print(f"📏 上下文范围: {Config.MIN_CONTEXT_LENGTH}-{Config.MAX_CONTEXT_LENGTH}")
-    print(f"💾 每会话最大消息数: {Config.MAX_MESSAGES_PER_SESSION}")
+    print(f"💬 上下文管理: 全部消息（无限制）")  # ⭐ 新增
+    print(f"💾 会话消息限制: {'无限制' if Config.MAX_MESSAGES_PER_SESSION is None else Config.MAX_MESSAGES_PER_SESSION}")  # ⭐ 新增
     print("=" * 60)
 
 # ============ API 路由 ============
@@ -88,7 +87,9 @@ def chat_stream():
         
         user_message = data.get('message', '').strip()
         session_id = data.get('session_id')
-        max_context = data.get('max_context', Config.MAX_CONTEXT_FOR_AI)
+        
+        # ⭐⭐⭐ 修复：移除 max_context（已不需要） ⭐⭐⭐
+        # ❌ 删除这行：max_context = data.get('max_context', Config.MAX_CONTEXT_FOR_AI)
         
         if not user_message:
             return jsonify({'status': 'error', 'message': '消息不能为空'}), 400
@@ -102,7 +103,8 @@ def chat_stream():
         
         import time
         start_time = time.time()
-        print(f"📨 收到流式请求: {user_message[:50]}... (上下文: {max_context} 轮)")
+        # ⭐ 修改日志输出
+        print(f"📨 收到流式请求: {user_message[:50]}... (会话: {session_id})")
         
         service = get_llm_service()
         
@@ -114,8 +116,10 @@ def chat_stream():
                 first_chunk_time = None
                 chunk_count = 0
                 
-                # ⭐ 调用 LLMService（它会自动保存消息）
-                for content in service.chat_stream(user_message, session_id, max_context):
+                # ⭐⭐⭐ 修复：移除 max_context 参数 ⭐⭐⭐
+                # ❌ 旧代码：for content in service.chat_stream(user_message, session_id, max_context):
+                # ✅ 新代码：不传 max_context，LLMService 会自动读取全部消息
+                for content in service.chat_stream(user_message, session_id):
                     if chunk_count == 0:
                         first_chunk_time = time.time()
                         print(f"⚡ 首字节延迟: {first_chunk_time - start_time:.2f}秒")
@@ -131,6 +135,8 @@ def chat_stream():
                 
             except Exception as e:
                 print(f"❌ 流式生成错误: {str(e)}")
+                import traceback
+                traceback.print_exc()
                 error_data = json.dumps({'type': 'error', 'message': str(e)}, ensure_ascii=False)
                 yield f"data: {error_data}\n\n"
         
@@ -172,30 +178,12 @@ def clear_context():
         print(f"❌ 清除上下文失败: {e}")
         return jsonify({'status': 'error', 'message': f'清除上下文失败: {str(e)}'}), 500
 
-@app.route('/api/chat/context-info/<session_id>', methods=['GET'])
-@login_required
-def get_context_info(session_id):
-    """获取当前上下文信息"""
-    try:
-        from services.chat_service import ChatService
-        
-        # ⭐ 从数据库获取会话详情
-        session_detail = ChatService.get_session_detail(session_id)
-        
-        if not session_detail:
-            return jsonify({'status': 'error', 'message': '会话不存在'}), 404
-        
-        return jsonify({
-            'status': 'success',
-            'session_id': session_id,
-            'history_length': session_detail['message_count'] // 2,  # 对话轮数
-            'max_context': Config.MAX_CONTEXT_FOR_AI,
-            'title': session_detail['title']
-        })
-        
-    except Exception as e:
-        print(f"❌ 获取上下文信息失败: {e}")
-        return jsonify({'status': 'error', 'message': str(e)}), 500
+# ⭐⭐⭐ 删除：/api/chat/context-info 接口（已不需要） ⭐⭐⭐
+# ❌ 删除以下整个路由函数：
+# @app.route('/api/chat/context-info/<session_id>', methods=['GET'])
+# @login_required
+# def get_context_info(session_id):
+#     ...
 
 # ========== ⭐⭐⭐ 会话管理 API ⭐⭐⭐ ==========
 
@@ -204,15 +192,6 @@ def get_context_info(session_id):
 def get_sessions():
     """
     获取当前用户的所有会话列表
-    
-    响应：
-    {
-        "status": "success",
-        "sessions": [
-            {"id": 1, "title": "...", "is_active": true, "updated_at": "..."},
-            {"id": 2, "title": "...", "is_active": false, "updated_at": "...}
-        ]
-    }
     """
     try:
         from services.chat_service import ChatService
@@ -235,22 +214,13 @@ def get_session_messages_route(session_id):
     获取指定会话的消息
     
     查询参数：
-    - limit: 返回数量（默认50）
-    
-    响应：
-    {
-        "status": "success",
-        "messages": [
-            {"id": 1, "role": "user", "content": "...", "created_at": "..."},
-            {"id": 2, "role": "assistant", "content": "...", "created_at": "...}
-        ]
-    }
+    - limit: 返回数量（默认 None = 全部）
     """
     try:
         from services.chat_service import ChatService
         
-        # 获取查询参数
-        limit = request.args.get('limit', 50, type=int)
+        # ⭐ 修改：默认返回全部消息（limit=None）
+        limit = request.args.get('limit', None, type=int)
         
         # 验证 session_id 是否属于当前用户
         from models.chat_session import ChatSession
@@ -265,7 +235,7 @@ def get_session_messages_route(session_id):
                 'message': '会话不存在或无权访问'
             }), 404
         
-        # 获取消息
+        # 获取消息（全部）
         messages = ChatService.get_session_messages(session_id, limit=limit)
         
         return jsonify({
@@ -276,6 +246,73 @@ def get_session_messages_route(session_id):
     except Exception as e:
         print(f"❌ 获取会话消息失败: {e}")
         return jsonify({'status': 'error', 'message': f'获取消息失败: {str(e)}'}), 500
+    
+
+# ========== ⭐⭐⭐ 会话管理 API ⭐⭐⭐ ==========
+
+# ⭐ 新增：重命名会话 API
+@app.route('/api/sessions/<session_id>/rename', methods=['PUT'])
+@login_required
+def rename_session(session_id):
+    """
+    重命名会话
+    """
+    try:
+        data = request.get_json()
+        new_title = data.get('title', '').strip()
+        
+        if not new_title:
+            return jsonify({
+                'status': 'error',
+                'message': '标题不能为空'
+            }), 400
+        
+        if len(new_title) > 200:
+            return jsonify({
+                'status': 'error',
+                'message': '标题长度不能超过200字符'
+            }), 400
+        
+        print(f"\n{'='*60}")
+        print(f"✏️ 重命名会话请求")
+        print(f"   用户ID: {g.user_id}")
+        print(f"   会话ID: {session_id}")
+        print(f"   新标题: {new_title}")
+        
+        # 调用服务层
+        from services.chat_service import ChatService
+        result = ChatService.rename_session(session_id, g.user_id, new_title)
+        
+        if result:
+            print(f"✅ 重命名成功")
+            print(f"{'='*60}\n")
+            
+            return jsonify({
+                'status': 'success',
+                'message': '重命名成功',
+                'session': result.to_dict()
+            })
+        else:
+            print(f"❌ 会话不存在")
+            print(f"{'='*60}\n")
+            
+            return jsonify({
+                'status': 'error',
+                'message': '会话不存在或无权修改'
+            }), 404
+            
+    except Exception as e:
+        print(f"❌ 重命名会话失败: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        print(f"{'='*60}\n")
+        
+        return jsonify({
+            'status': 'error',
+            'message': str(e)
+        }), 500
+
+
 
 @app.route('/api/sessions/<session_id>/activate', methods=['POST'])
 @login_required
@@ -326,12 +363,6 @@ def activate_session(session_id):
 def create_new_session():
     """
     归档当前会话，创建新会话
-    
-    响应：
-    {
-        "status": "success",
-        "session": {"id": 3, "session_id": "...", "title": "新对话", "is_active": true}
-    }
     """
     try:
         from services.chat_service import ChatService
@@ -385,7 +416,6 @@ def delete_session_route(session_id):
             print(f"✅ 会话删除成功")
             print(f"{'='*60}\n")
             
-            # ⭐ 简化返回：不再返回新会话信息
             return jsonify({
                 'status': 'success',
                 'message': '会话已删除'
@@ -520,6 +550,9 @@ def get_user_profile():
     except Exception as e:
         print(f"❌ 获取用户信息错误: {e}")
         return jsonify({'status': 'error', 'message': str(e)}), 500
+
+
+
 
 @app.errorhandler(404)
 def not_found(error):

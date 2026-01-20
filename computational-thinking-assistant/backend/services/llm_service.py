@@ -46,29 +46,23 @@ class LLMService:
         Args:
             user_message: 用户消息
             session_id: 会话 ID（字符串）
-            max_context: 上下文长度（默认使用配置值）
+            max_context: ⭐ 已废弃，不再使用
         
         Yields:
             str: AI 回复的文本块
-        
-        改进：
-        1. ✅ 从数据库获取上下文（而非内存）
-        2. ✅ 调用 ChatService 保存消息
-        3. ✅ 支持可变上下文长度
         """
         try:
-            # ⭐ 1. 先保存用户消息到数据库
+            # 1. 先保存用户消息到数据库
             if session_id:
                 ChatService.save_message(session_id, 'user', user_message)
                 print(f"💾 用户消息已保存: {user_message[:30]}...")
             
-            # ⭐ 2. 从数据库获取上下文（而非内存）
-            context_limit = max_context or Config.MAX_CONTEXT_FOR_AI
-            messages = self._build_messages(user_message, session_id, context_limit)
+            # ⭐⭐⭐ 2. 修改：获取全部上下文（不再限制） ⭐⭐⭐
+            messages = self._build_messages(user_message, session_id, limit=None)
             
-            print(f"🧠 构建上下文: {len(messages)} 条消息 (限制: {context_limit} 轮)")
+            print(f"🧠 构建上下文: {len(messages)} 条消息（全部历史）")
             
-            # ⭐ 3. 调用 OpenAI API
+            # 3. 调用 OpenAI API
             stream = self.client.chat.completions.create(
                 model=self.model,
                 messages=messages,
@@ -80,9 +74,8 @@ class LLMService:
             
             full_reply = ""
             
-            # ⭐ 4. 逐块返回内容
+            # 4. 逐块返回内容
             for chunk in stream:
-                # 安全检查
                 if not hasattr(chunk, 'choices') or not chunk.choices:
                     continue
                 
@@ -96,12 +89,11 @@ class LLMService:
                 if not hasattr(delta, 'content') or delta.content is None:
                     continue
                 
-                # ⭐ 返回内容块
                 content = delta.content
                 full_reply += content
                 yield content
             
-            # ⭐ 5. 流式结束后，保存 AI 回复到数据库
+            # 5. 流式结束后，保存 AI 回复到数据库
             if full_reply and session_id:
                 ChatService.save_message(session_id, 'assistant', full_reply)
                 print(f"💾 AI 回复已保存: {full_reply[:30]}... (共 {len(full_reply)} 字符)")
@@ -113,43 +105,31 @@ class LLMService:
             traceback.print_exc()
             yield error_msg
     
-    def _build_messages(self, user_message, session_id, max_context):
+    def _build_messages(self, user_message, session_id, limit=None):
         """
         构建发送给 AI 的消息列表
         
         Args:
             user_message: 当前用户消息
             session_id: 会话 ID
-            max_context: 上下文长度（轮数）
+            limit: ⭐ 已废弃，永远返回全部
         
         Returns:
             list: OpenAI API 格式的消息列表
-            [
-                {"role": "system", "content": "..."},
-                {"role": "user", "content": "..."},
-                {"role": "assistant", "content": "..."},
-                ...
-            ]
-        
-        改进：
-        ✅ 从数据库获取上下文（而非内存）
-        ✅ 不包含当前用户消息（已在数据库中保存）
         """
         messages = [
             {"role": "system", "content": Config.SYSTEM_PROMPT}
         ]
         
-        # ⭐ 从数据库获取历史上下文（而非 self.conversation_history）
+        # ⭐⭐⭐ 修改：从数据库获取全部历史上下文 ⭐⭐⭐
         if session_id:
-            # 获取最近 N 条消息（不包含刚保存的用户消息）
-            context = ChatService.get_context_for_ai(session_id, limit=max_context)
+            context = ChatService.get_context_for_ai(session_id, limit=None)  # ⭐ 全部
             
             if context:
                 messages.extend(context)
-                print(f"📜 加载历史上下文: {len(context)} 条消息")
+                print(f"📜 加载历史上下文: {len(context)} 条消息（全部历史）")
         
-        # ⭐ 注意：当前用户消息已在 chat_stream 开头保存到数据库
-        # 但 OpenAI API 仍需要包含它
+        # 当前用户消息
         messages.append({"role": "user", "content": user_message})
         
         return messages

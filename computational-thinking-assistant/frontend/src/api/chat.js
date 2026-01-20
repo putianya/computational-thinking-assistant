@@ -32,29 +32,28 @@ export const chatAPI = {
     return response.data;
   },
 
-  // ⭐⭐⭐ 发送流式消息 ⭐⭐⭐
+  // ⭐⭐⭐ 修改：发送流式消息（移除 maxContext 参数） ⭐⭐⭐
   async sendMessageStream(
     message,
     sessionId,
-    maxContext,
+    maxContext, // ⭐ 保留参数但不使用（兼容性）
     onChunk,
     onDone,
     onError,
   ) {
     try {
-      // ⭐ 获取 Token
       const token = localStorage.getItem("token");
 
       const response = await fetch(`${API_BASE_URL}/chat/stream`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: token ? `Bearer ${token}` : "", // ⭐ 添加认证
+          Authorization: token ? `Bearer ${token}` : "",
         },
         body: JSON.stringify({
           message,
           session_id: sessionId,
-          max_context: maxContext, // ⭐ 传递上下文长度
+          // ❌ 删除：max_context: maxContext
         }),
       });
 
@@ -75,16 +74,14 @@ export const chatAPI = {
 
         buffer += decoder.decode(value, { stream: true });
 
-        // ⭐ 处理 SSE 数据流
         const lines = buffer.split("\n");
-        buffer = lines.pop() || ""; // 保留不完整的行
+        buffer = lines.pop() || "";
 
         for (const line of lines) {
           if (line.startsWith("data: ")) {
             try {
               const data = JSON.parse(line.slice(6));
 
-              // ⭐ 根据不同类型处理
               if (data.type === "session") {
                 currentSessionId = data.session_id;
               } else if (data.type === "content") {
@@ -110,12 +107,6 @@ export const chatAPI = {
     const response = await api.post("/chat/clear-context", {
       session_id: sessionId,
     });
-    return response.data;
-  },
-
-  // 获取上下文信息
-  async getContextInfo(sessionId) {
-    const response = await api.get(`/chat/context-info/${sessionId}`);
     return response.data;
   },
 
@@ -243,6 +234,24 @@ export const chatAPI = {
         console.error("❌ 删除会话失败:", error.message);
         throw error;
       }
+    }
+  },
+
+  /**
+   * ⭐ 新增：重命名会话
+   * @param {string} sessionId - 会话 ID
+   * @param {string} newTitle - 新标题
+   * @returns {Promise<{status: string, session: Object}>}
+   */
+  async renameSession(sessionId, newTitle) {
+    try {
+      const response = await api.put(`/sessions/${sessionId}/rename`, {
+        title: newTitle,
+      });
+      return response.data;
+    } catch (error) {
+      console.error("❌ 重命名会话失败:", error);
+      throw error;
     }
   },
 };

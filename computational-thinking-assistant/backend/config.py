@@ -40,20 +40,25 @@ class Config:
     TEMPERATURE = float(os.getenv('TEMPERATURE', 0.3))
     MAX_TOKENS = int(os.getenv('MAX_TOKENS', 1000))
     
-    # ⭐⭐⭐ 新增：聊天会话配置 ⭐⭐⭐
+    # ⭐⭐⭐ 修改：移除上下文限制 ⭐⭐⭐
     
     # 每个会话最多保留的消息数量（数据库存储）
-    MAX_MESSAGES_PER_SESSION = int(os.getenv('MAX_MESSAGES_PER_SESSION', 50))
+    # ❌ 删除此限制，改为无限制
+    # MAX_MESSAGES_PER_SESSION = int(os.getenv('MAX_MESSAGES_PER_SESSION', 50))
     
-    # 发送给 AI 的上下文消息数量（默认值，可被前端覆盖）
-    MAX_CONTEXT_FOR_AI = int(os.getenv('MAX_CONTEXT_FOR_AI', 10))
+    # ✅ 新增：不限制消息数量（设为 None 或极大值）
+    MAX_MESSAGES_PER_SESSION = None  # 无限制
+    
+    # ❌ 删除：发送给 AI 的上下文限制
+    # MAX_CONTEXT_FOR_AI = int(os.getenv('MAX_CONTEXT_FOR_AI', 10))
+    # MIN_CONTEXT_LENGTH = int(os.getenv('MIN_CONTEXT_LENGTH', 10))
+    # MAX_CONTEXT_LENGTH = int(os.getenv('MAX_CONTEXT_LENGTH', 50))
+    
+    # ✅ 新增：永远发送全部消息给 AI
+    SEND_ALL_MESSAGES_TO_AI = True
     
     # 默认会话标题
     DEFAULT_SESSION_TITLE = os.getenv('DEFAULT_SESSION_TITLE', '新对话')
-    
-    # 用户可设置的上下文范围（前端滑块的 min/max）
-    MIN_CONTEXT_LENGTH = int(os.getenv('MIN_CONTEXT_LENGTH', 10))
-    MAX_CONTEXT_LENGTH = int(os.getenv('MAX_CONTEXT_LENGTH', 50))
     
     # ========== 系统提示词 ==========
     SYSTEM_PROMPT = os.getenv(

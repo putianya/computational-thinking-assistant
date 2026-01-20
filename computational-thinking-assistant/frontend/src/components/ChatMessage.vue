@@ -145,6 +145,17 @@ const renderedContent = computed(() => {
   animation: fadeIn 0.3s ease;
 }
 
+/* ⭐ 新增：用户消息右对齐 */
+.message-user {
+  flex-direction: row-reverse; /* 反转布局方向 */
+  justify-content: flex-start;
+}
+
+/* ⭐ 新增：AI 消息左对齐 */
+.message-assistant {
+  flex-direction: row;
+}
+
 @keyframes fadeIn {
   from {
     opacity: 0;
@@ -183,6 +194,19 @@ const renderedContent = computed(() => {
 .message-content-wrapper {
   flex: 1;
   min-width: 0;
+  /* ⭐ 新增：用户消息右对齐内容 */
+  display: flex;
+  flex-direction: column;
+}
+
+/* ⭐ 新增：用户消息的头部右对齐 */
+.message-user .message-content-wrapper {
+  align-items: flex-end;
+}
+
+/* ⭐ 新增：AI 消息的头部左对齐 */
+.message-assistant .message-content-wrapper {
+  align-items: flex-start;
 }
 
 .message-header {
@@ -190,6 +214,11 @@ const renderedContent = computed(() => {
   align-items: center;
   gap: 8px;
   margin-bottom: 6px;
+}
+
+/* ⭐ 新增：用户消息时间在左边 */
+.message-user .message-header {
+  flex-direction: row-reverse;
 }
 
 .message-sender {
@@ -220,16 +249,21 @@ const renderedContent = computed(() => {
   word-wrap: break-word;
   position: relative;
   line-height: 1.6;
+  max-width: 80%; /* ⭐ 限制最大宽度，避免过宽 */
 }
 
 .message-user .message-content {
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   color: white;
+  /* ⭐ 新增：用户消息圆角调整（左上角更圆） */
+  border-radius: 18px 18px 4px 18px;
 }
 
 .message-assistant .message-content {
   background: #f8f9fa;
   border: 1px solid #e9ecef;
+  /* ⭐ 新增：AI 消息圆角调整（右上角更圆） */
+  border-radius: 18px 18px 18px 4px;
 }
 
 /* ========== 纯文本内容 ========== */
@@ -349,6 +383,11 @@ const renderedContent = computed(() => {
   vertical-align: middle;
 }
 
+/* ⭐ 新增：用户消息的光标颜色调整 */
+.message-user .typing-cursor {
+  background: white;
+}
+
 @keyframes blink {
   0%,
   100% {
@@ -375,6 +414,7 @@ const renderedContent = computed(() => {
   .message-content {
     padding: 10px 14px;
     font-size: 14px;
+    max-width: 85%; /* ⭐ 移动端稍微宽一点 */
   }
 
   .markdown-body,

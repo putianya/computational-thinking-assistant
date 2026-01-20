@@ -3,25 +3,22 @@ import { ref, computed } from "vue";
 import { chatAPI } from "../api/chat";
 
 export const useChatStore = defineStore("chat", () => {
-  // ========== 现有状态 ==========
-  const messages = ref([]); // 当前会话的消息
+  // ========== 状态 ==========
+  const messages = ref([]);
   const isStreaming = ref(false);
   const currentReply = ref("");
 
-  // ========== ⭐ 新增状态 ⭐ ==========
-  const sessions = ref([]); // 所有会话列表
-  const currentSession = ref(null); // 当前会话对象
+  const sessions = ref([]);
+  const currentSession = ref(null);
   const isLoadingSessions = ref(false);
 
-  // 会话和上下文设置
   const sessionId = ref(null);
-  const maxContextLength = ref(
-    parseInt(localStorage.getItem("maxContextLength")) || 10,
-  );
 
   // ========== 计算属性 ==========
+
+  // ⭐⭐⭐ 修改：对话轮数 = 消息数 / 2 ⭐⭐⭐
   const currentContextLength = computed(() => {
-    return Math.floor(messages.value.length / 2); // 对话轮数
+    return Math.floor(messages.value.length / 2);
   });
 
   const hasMessages = computed(() => {
@@ -177,172 +174,239 @@ export const useChatStore = defineStore("chat", () => {
   async function deleteSession(sessionIdToDelete) {
     try {
       console.log(`🗑️ 删除会话: ${sessionIdToDelete}`);
-      
+
       const isCurrentSession = sessionId.value === sessionIdToDelete;
       console.log(`   是否删除当前会话: ${isCurrentSession}`);
 
       // 1. 调用 API 删除
       const result = await chatAPI.deleteSession(sessionIdToDelete);
 
-      if (result.status === 'success') {
-        console.log('✅ 服务器删除成功');
+      if (result.status === "success") {
+        console.log("✅ 服务器删除成功");
 
         // 2. 从本地列表中移除
-        sessions.value = sessions.value.filter(s => s.session_id !== sessionIdToDelete);
+        sessions.value = sessions.value.filter(
+          (s) => s.session_id !== sessionIdToDelete,
+        );
         console.log(`   删除后剩余会话数: ${sessions.value.length}`);
 
         // 3. 如果删除的是当前会话，需要切换或清空
         if (isCurrentSession) {
-          console.log('⚠️ 删除的是当前会话');
+          console.log("⚠️ 删除的是当前会话");
 
           // 3.1 如果还有其他会话，切换到第一个
           if (sessions.value.length > 0) {
-            console.log('🔄 切换到下一个会话');
+            console.log("🔄 切换到下一个会话");
             const nextSession = sessions.value[0];
-            
+
             try {
               await switchSession(nextSession.session_id);
             } catch (switchError) {
-              console.error('❌ 切换会话失败:', switchError);
-              
+              console.error("❌ 切换会话失败:", switchError);
+
               // 手动设置当前会话
               currentSession.value = nextSession;
               sessionId.value = nextSession.session_id;
-              
+
               // 重新加载消息
               try {
-                const msgs = await chatAPI.getSessionMessages(nextSession.session_id);
+                const msgs = await chatAPI.getSessionMessages(
+                  nextSession.session_id,
+                );
                 messages.value = msgs;
               } catch (msgError) {
-                console.error('❌ 加载消息失败:', msgError);
+                console.error("❌ 加载消息失败:", msgError);
                 messages.value = [];
               }
             }
           }
           // ⭐⭐⭐ 修改：删除所有会话后，显示空白页（不自动创建新会话）⭐⭐⭐
           else {
-            console.log('📭 所有会话已删除，显示空白页');
-            
+            console.log("📭 所有会话已删除，显示空白页");
+
             // 清空状态
             currentSession.value = null;
             sessionId.value = null;
             messages.value = [];
-            currentReply.value = '';
-            
+            currentReply.value = "";
+
             // ⭐ 提示用户点击"新对话"按钮创建会话
             console.log('💡 提示：点击"新对话"按钮创建新会话');
           }
         } else {
-          console.log('✅ 删除的是其他会话，无需切换');
+          console.log("✅ 删除的是其他会话，无需切换");
         }
 
         return true;
       } else {
-        throw new Error(result.message || '删除失败');
+        throw new Error(result.message || "删除失败");
       }
     } catch (error) {
-      console.error('❌ 删除失败:', error);
+      console.error("❌ 删除失败:", error);
       return false;
     }
   }
 
-  // ========== ⭐ 修改：发送消息 ⭐ ==========
+  /**
+   * ⭐ 新增：重命名会话
+   * @param {string} sessionId - 会话 ID
+   * @param {string} newTitle - 新标题
+   */
+  async function renameSession(sessionId, newTitle) {
+    try {
+      console.log(`✏️ 重命名会话: ${sessionId} -> ${newTitle}`);
+
+      const response = await chatAPI.renameSession(sessionId, newTitle);
+
+      if (response.status === "success") {
+        // 更新本地会话列表
+        const sessionIndex = sessions.value.findIndex(
+          (s) => s.session_id === sessionId,
+        );
+
+        if (sessionIndex !== -1) {
+          sessions.value[sessionIndex].title = newTitle;
+        }
+
+        // 如果是当前会话，也更新
+        if (
+          currentSession.value &&
+          currentSession.value.session_id === sessionId
+        ) {
+          currentSession.value.title = newTitle;
+        }
+
+        console.log("✅ 重命名成功");
+        return true;
+      } else {
+        console.error("❌ 重命名失败:", response.message);
+        return false;
+      }
+    } catch (error) {
+      console.error("❌ 重命名会话失败:", error);
+      throw error;
+    }
+  }
+
+  // ========== ⭐ 新增：发送流式消息方法 ⭐ ==========
 
   /**
-   * 发送消息
+   * 发送流式消息
+   * @param {string} message - 用户消息
    */
-  async function sendMessageStream(userMessage) {
-    if (!userMessage.trim()) return;
-
-    // 确保有当前会话
-    if (!currentSession.value) {
-      console.log("📝 没有活跃会话，创建新会话...");
-      await createNewSession();
-    }
-
-    // ⭐ 立即显示用户消息（使用 ISO 字符串格式）
-    const userMsg = {
-      role: "user",
-      content: userMessage,
-      created_at: new Date().toISOString(), // ⭐ ISO 字符串格式
-    };
-    messages.value.push(userMsg);
+  async function sendMessageStream(message) {
+    if (!message.trim()) return;
 
     try {
+      console.log(`💬 发送消息: ${message}`);
+      console.log(`📍 当前会话: ${sessionId.value}`);
+
+      // 1. 立即添加用户消息到界面
+      const userMessage = {
+        role: "user",
+        content: message,
+        created_at: new Date().toISOString(),
+      };
+      messages.value.push(userMessage);
+
+      // 2. 添加 AI 消息占位符
+      const aiMessage = {
+        role: "assistant",
+        content: "",
+        created_at: new Date().toISOString(),
+      };
+      messages.value.push(aiMessage);
+
+      // 3. 设置流式状态
       isStreaming.value = true;
       currentReply.value = "";
 
-      // ⭐ 准备助手消息占位（使用 ISO 字符串格式）
-      const assistantMsg = {
-        role: "assistant",
-        content: "",
-        created_at: new Date().toISOString(), // ⭐ ISO 字符串格式
-      };
-      messages.value.push(assistantMsg);
-
-      const assistantIndex = messages.value.length - 1;
-
+      // 4. 调用 API（流式输出）
       await chatAPI.sendMessageStream(
-        userMessage,
+        message,
         sessionId.value,
-        maxContextLength.value,
-        // onChunk
+        null, // maxContext（已废弃）
+
+        // ⭐ onChunk：每收到一块内容
         (chunk) => {
           currentReply.value += chunk;
-          messages.value[assistantIndex].content = currentReply.value;
+          aiMessage.content = currentReply.value;
         },
-        // onDone
-        (returnedSessionId) => {
-          console.log("✅ 流式响应完成");
 
-          if (returnedSessionId && returnedSessionId !== sessionId.value) {
-            sessionId.value = returnedSessionId;
-            if (currentSession.value) {
-              currentSession.value.session_id = returnedSessionId;
-            }
+        // ⭐ onDone：流式结束
+        (newSessionId) => {
+          console.log(`✅ 流式输出完成，会话ID: ${newSessionId}`);
+
+          // 更新会话ID（首次发送时后端会创建新会话）
+          if (newSessionId && newSessionId !== sessionId.value) {
+            sessionId.value = newSessionId;
+
+            // 刷新会话列表
+            loadSessions();
           }
 
+          // 重置流式状态
           isStreaming.value = false;
           currentReply.value = "";
-
-          // 重新加载会话列表
-          loadSessions();
         },
-        // onError
+
+        // ⭐ onError：错误处理
         (error) => {
-          console.error("❌ 流式响应错误:", error);
+          console.error("❌ 流式输出错误:", error);
+
+          // 显示错误消息
+          aiMessage.content = `抱歉，发生错误：${error.message}`;
+
+          // 重置状态
           isStreaming.value = false;
           currentReply.value = "";
-
-          messages.value[assistantIndex].content =
-            "抱歉，发生了错误：" + error.message;
         },
       );
     } catch (error) {
       console.error("❌ 发送消息失败:", error);
       isStreaming.value = false;
       currentReply.value = "";
+      throw error;
     }
   }
 
-  /**
-   * 清除当前对话（已废弃，使用 createNewSession 代替）
-   */
-  async function clearContext() {
-    await createNewSession();
-  }
+  // ========== ⭐ 新增：重置 Store ⭐ ==========
 
   /**
-   * 重置 Store（登出时调用）
+   * 重置整个 Store（登出时调用）
    */
   function resetStore() {
+    console.log("🔄 重置聊天 Store...");
+
+    // 清空所有状态
     messages.value = [];
     sessions.value = [];
     currentSession.value = null;
     sessionId.value = null;
     isStreaming.value = false;
     currentReply.value = "";
-    console.log("🔄 Chat Store 已重置");
+    isLoadingSessions.value = false;
+
+    console.log("✅ 聊天 Store 已重置");
+  }
+
+  // ========== ⭐ 修改：清除上下文（改为创建新会话） ⭐ ==========
+
+  /**
+   * 清除上下文（实际是创建新会话）
+   */
+  async function clearContext() {
+    try {
+      console.log("🗑️ 清除上下文（创建新会话）...");
+
+      // 调用创建新会话 API
+      await createNewSession();
+
+      console.log("✅ 上下文已清除");
+    } catch (error) {
+      console.error("❌ 清除上下文失败:", error);
+      throw error;
+    }
   }
 
   // ========== 导出 ==========
@@ -354,7 +418,6 @@ export const useChatStore = defineStore("chat", () => {
     isStreaming,
     currentReply,
     sessionId,
-    maxContextLength,
     isLoadingSessions,
 
     // 计算属性
@@ -369,8 +432,9 @@ export const useChatStore = defineStore("chat", () => {
     switchSession,
     createNewSession,
     deleteSession,
-    sendMessageStream,
+    renameSession,
+    sendMessageStream, // ⭐ 新增导出
     clearContext,
-    resetStore,
+    resetStore, // ⭐ 新增导出
   };
 });

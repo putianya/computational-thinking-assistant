@@ -66,8 +66,7 @@ class ChatSession(db.Model):
         Returns:
             ChatMessage: 新创建的消息对象
         """
-        
-        from config import Config  # ⭐ 在方法内部导入，避免初始化时的循环引用
+        from config import Config
         
         # 1. 创建新消息
         new_message = ChatMessage(
@@ -83,18 +82,17 @@ class ChatSession(db.Model):
         # 3. 更新会话的最后修改时间
         self.updated_at = datetime.now()
         
-        # 4. ⭐ 如果消息超过配置的最大值，删除最旧的
-        max_messages = Config.MAX_MESSAGES_PER_SESSION
+        # ⭐⭐⭐ 4. 修改：不再删除旧消息 ⭐⭐⭐
+        # ❌ 删除以下代码块：
+        # max_messages = Config.MAX_MESSAGES_PER_SESSION
+        # if self.message_count > max_messages:
+        #     oldest_message = self.messages.order_by(ChatMessage.created_at.asc()).first()
+        #     if oldest_message:
+        #         db.session.delete(oldest_message)
+        #         self.message_count -= 1
         
-        if self.message_count > max_messages:
-            oldest_message = self.messages.order_by(
-                ChatMessage.created_at.asc()
-            ).first()
-            
-            if oldest_message:
-                db.session.delete(oldest_message)
-                self.message_count -= 1
-                print(f"🗑️ 删除会话 {self.session_id} 的最旧消息（超过 {max_messages} 条限制）")
+        # ✅ 新增：记录对话轮数（消息数 / 2）
+        self.conversation_rounds = self.message_count // 2
         
         # 5. 如果是第一条用户消息，自动生成标题
         if self.message_count == 1 and role == 'user':
@@ -104,6 +102,15 @@ class ChatSession(db.Model):
         db.session.commit()
         
         return new_message
+    
+    def get_conversation_rounds(self):
+        """
+        获取对话轮数
+        
+        Returns:
+            int: 对话轮数（消息数 / 2）
+        """
+        return self.message_count // 2
     
     def to_dict(self, include_messages=False):
         """
@@ -123,7 +130,8 @@ class ChatSession(db.Model):
             'is_active': self.is_active,
             'created_at': self.created_at.isoformat() if self.created_at else None,
             'updated_at': self.updated_at.isoformat() if self.updated_at else None,
-            'message_count': self.message_count
+            'message_count': self.message_count,
+            'conversation_rounds': self.get_conversation_rounds()  # ⭐ 新增
         }
         
         if include_messages:
