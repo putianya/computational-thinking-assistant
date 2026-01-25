@@ -104,25 +104,31 @@ class ChatService:
     # ========== 功能 3：保存消息 ==========
     
     @staticmethod
-    def save_message(session_id, role, content):
+    def save_message(session_id, role, content, referenced_chunks=None):
         """
-        保存一条消息到指定会话
+        保存一条消息到指定会话（⭐ 支持保存 RAG 引用）
         
         Args:
             session_id: 会话 session_id（字符串）
             role: 'user' 或 'assistant'
             content: 消息内容
-        
+            referenced_chunks: ⭐ 新增：引用的知识块 ID 列表（可选）
+                          例如: [1, 3, 5] 或 None
+    
         Returns:
             ChatMessage: 保存的消息对象
-        
-        逻辑：
-        1. 查找会话
-        2. 使用 ChatSession.add_message() 保存消息
-           └─ 自动处理：消息限制、标题生成、时间更新
-        
-        为什么在这里处理50条限制？
-        └─ 统一管理，不容易遗漏
+    
+        示例:
+            # 保存用户消息（无引用）
+            save_message("session_123", "user", "什么是指针？")
+            
+            # 保存 AI 回复（带引用）
+            save_message(
+                "session_123", 
+                "assistant", 
+                "根据【参考资料1】...", 
+                referenced_chunks=[1, 3, 5]
+            )
         """
         try:
             # 查找会话（通过 session_id 字符串）
@@ -134,6 +140,21 @@ class ChatService:
             # 使用 ChatSession 的 add_message 方法
             # 它会自动处理：消息限制、标题生成、计数更新
             new_message = session.add_message(role, content)
+            
+            # ⭐⭐⭐ 新增：保存引用关系 ⭐⭐⭐
+            if referenced_chunks:
+                print(f"💾 保存引用关系: {len(referenced_chunks)} 个知识块")
+                new_message.set_referenced_chunks(referenced_chunks)
+                
+                # 更新引用计数（可选，用于统计）
+                from models.knowledge_chunk import KnowledgeChunk
+                for chunk_id in referenced_chunks:
+                    chunk = KnowledgeChunk.query.get(chunk_id)
+                    if chunk:
+                        chunk.increment_retrieved()
+                
+                db.session.commit()
+                print(f"   引用的知识块: {referenced_chunks}")
             
             print(f"💾 保存消息: {role} - {content[:30]}... (会话: {session_id})")
             

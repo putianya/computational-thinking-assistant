@@ -27,10 +27,14 @@ class ClassificationResult:
     def to_dict(self) -> Dict:
         """转换为字典"""
         return {
-            'type': self.question_type,
+            'category': self.question_type,  # ⭐ 改为 'category'
+            'type': self.question_type,       # ⭐ 保留 'type' 兼容旧代码
             'confidence': self.confidence,
             'keywords': self.keywords,
-            'retrieval_params': self.retrieval_params
+            'retrieval_params': self.retrieval_params,
+            # ⭐ 新增：直接返回建议参数
+            'top_k': self.retrieval_params.get('top_k', 5),
+            'threshold': self.retrieval_params.get('similarity_threshold', 0.75)
         }
 
 

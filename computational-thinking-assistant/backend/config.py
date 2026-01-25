@@ -40,48 +40,45 @@ class Config:
     TEMPERATURE = float(os.getenv('TEMPERATURE', 0.3))
     MAX_TOKENS = int(os.getenv('MAX_TOKENS', 1000))
     
-    # ⭐⭐⭐ 修改：移除上下文限制 ⭐⭐⭐
-    
-    # 每个会话最多保留的消息数量（数据库存储）
-    # ❌ 删除此限制，改为无限制
-    # MAX_MESSAGES_PER_SESSION = int(os.getenv('MAX_MESSAGES_PER_SESSION', 50))
-    
-    # ✅ 新增：不限制消息数量（设为 None 或极大值）
-    MAX_MESSAGES_PER_SESSION = None  # 无限制
-    
-    # ❌ 删除：发送给 AI 的上下文限制
-    # MAX_CONTEXT_FOR_AI = int(os.getenv('MAX_CONTEXT_FOR_AI', 10))
-    # MIN_CONTEXT_LENGTH = int(os.getenv('MIN_CONTEXT_LENGTH', 10))
-    # MAX_CONTEXT_LENGTH = int(os.getenv('MAX_CONTEXT_LENGTH', 50))
-    
-    # ✅ 新增：永远发送全部消息给 AI
-    SEND_ALL_MESSAGES_TO_AI = True
+    # ⭐⭐⭐ 新增：会话和消息限制配置 ⭐⭐⭐
+    MAX_MESSAGES_PER_SESSION = None  # ⭐ 设为 None 表示无限制
+    # 如果需要限制，可以改为：
+    # MAX_MESSAGES_PER_SESSION = int(os.getenv('MAX_MESSAGES_PER_SESSION', 100))
     
     # 默认会话标题
     DEFAULT_SESSION_TITLE = os.getenv('DEFAULT_SESSION_TITLE', '新对话')
+    
+    # ========== 向量数据库配置 ==========
+    CHROMA_PERSIST_DIR = os.getenv('CHROMA_PERSIST_DIR', 'data/chromadb')
+    EMBEDDING_MODEL = os.getenv('EMBEDDING_MODEL', 'paraphrase-multilingual-MiniLM-L12-v2')
+    COLLECTION_NAME = os.getenv('COLLECTION_NAME', 'computational_thinking')
+    TOP_K_RESULTS = int(os.getenv('TOP_K_RESULTS', 3))
+    SIMILARITY_THRESHOLD = float(os.getenv('SIMILARITY_THRESHOLD', 0.55))
     
     # ========== 系统提示词 ==========
     SYSTEM_PROMPT = os.getenv(
         'SYSTEM_PROMPT',
         '''你是一位专业的计算思维课程助教，专注于帮助学生学习 C 语言编程和数据结构。
-          使用中文回答学生的问题。
-         你的职责：
-        1. 解答关于 C 语言语法、数据结构、算法的问题
-         2. 分析学生代码中的错误并提供修改建议
-        3. 用通俗易懂的语言解释编程概念
-        4. 引导学生思考，而不是直接给出作业答案
+使用中文回答学生的问题。
 
-      回答原则：
-       - 如果学生问的是作业题目，先引导思路，不要直接给完整代码
-       - 代码示例使用 C 语言
-       - 解释时结合具体例子
-      - 鼓励学生动手实践'''
+你的职责：
+1. 解答关于 C 语言语法、数据结构、算法的问题
+2. 分析学生代码中的错误并提供修改建议
+3. 用通俗易懂的语言解释编程概念
+4. 引导学生思考，而不是直接给出作业答案
+
+回答原则：
+- 如果学生问的是作业题目，先引导思路，不要直接给完整代码
+- 代码示例使用 C 语言
+- 解释时结合具体例子
+- 鼓励学生动手实践'''
     )
 
     # 🆕 RAG 系统提示词
     RAG_SYSTEM_PROMPT = os.getenv('RAG_SYSTEM_PROMPT', 
 '''你是计算思维课程的智能助教。
 使用中文回答学生的问题。
+
 你可以访问课程知识库，其中包含：
 - C语言语法规则和示例
 - 数据结构原理和实现
