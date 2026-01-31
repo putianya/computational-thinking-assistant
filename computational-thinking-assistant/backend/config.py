@@ -53,7 +53,7 @@ class Config:
     EMBEDDING_MODEL = os.getenv('EMBEDDING_MODEL', 'paraphrase-multilingual-MiniLM-L12-v2')
     COLLECTION_NAME = os.getenv('COLLECTION_NAME', 'computational_thinking')
     TOP_K_RESULTS = int(os.getenv('TOP_K_RESULTS', 3))
-    SIMILARITY_THRESHOLD = float(os.getenv('SIMILARITY_THRESHOLD', 0.55))
+    SIMILARITY_THRESHOLD = float(os.getenv('SIMILARITY_THRESHOLD', 0.65))
     
     # ========== 系统提示词 ==========
     SYSTEM_PROMPT = os.getenv(

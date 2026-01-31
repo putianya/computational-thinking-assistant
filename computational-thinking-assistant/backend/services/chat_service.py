@@ -2,48 +2,29 @@
 """
 聊天服务 - 管理会话和消息（数据库操作）
 """
+import uuid
+import traceback
 from datetime import datetime
 from database import db
 from models.chat_session import ChatSession
 from models.chat_message import ChatMessage
 from config import Config
-import uuid
 
 
 class ChatService:
-    """
-    聊天服务类
-    负责：会话管理、消息存储、数据库操作
-    不负责：调用 AI（由 LLMService 负责）
-    """
+    """聊天服务类"""
     
     # ========== 功能 1：获取用户的会话列表 ==========
     
     @staticmethod
     def get_user_sessions(user_id):
-        """
-        获取用户的所有会话（按更新时间倒序）
-        
-        Args:
-            user_id: 用户 ID
-        
-        Returns:
-            list: 会话列表
-            [
-                {"id": 3, "title": "当前对话", "is_active": True, "updated_at": "..."},
-                {"id": 2, "title": "关于指针", "is_active": False, "updated_at": "..."},
-            ]
-        
-        为什么要这个？
-        └─ 前端侧边栏展示会话列表
-        """
+        """获取用户的所有会话"""
         try:
             sessions = ChatSession.query.filter_by(user_id=user_id)\
                 .order_by(ChatSession.updated_at.desc())\
                 .all()
             
             print(f"📋 用户 {user_id} 共有 {len(sessions)} 个会话")
-            
             return [session.to_dict(include_messages=False) for session in sessions]
             
         except Exception as e:
@@ -54,25 +35,8 @@ class ChatService:
     
     @staticmethod
     def get_or_create_active_session(user_id):
-        """
-        获取用户的当前活跃会话，如果没有就创建一个
-        
-        Args:
-            user_id: 用户 ID
-        
-        Returns:
-            ChatSession: 活跃会话对象
-        
-        逻辑：
-        1. 查找 is_active=True 的会话
-        2. 如果找到，返回它
-        3. 如果没找到，创建新会话并返回
-        
-        为什么需要这个？
-        └─ 用户登录时调用，确保总有一个可用的会话
-        """
+        """获取或创建活跃会话"""
         try:
-            # 查找活跃会话
             active_session = ChatSession.query.filter_by(
                 user_id=user_id,
                 is_active=True
@@ -82,7 +46,6 @@ class ChatService:
                 print(f"✅ 找到活跃会话: {active_session.session_id}")
                 return active_session
             
-            # 没有活跃会话，创建新的
             new_session = ChatSession(
                 session_id=f"session_{uuid.uuid4().hex[:16]}",
                 user_id=user_id,
@@ -105,398 +68,276 @@ class ChatService:
     
     @staticmethod
     def save_message(session_id, role, content, referenced_chunks=None):
-        """
-        保存一条消息到指定会话（⭐ 支持保存 RAG 引用）
-        
-        Args:
-            session_id: 会话 session_id（字符串）
-            role: 'user' 或 'assistant'
-            content: 消息内容
-            referenced_chunks: ⭐ 新增：引用的知识块 ID 列表（可选）
-                          例如: [1, 3, 5] 或 None
-    
-        Returns:
-            ChatMessage: 保存的消息对象
-    
-        示例:
-            # 保存用户消息（无引用）
-            save_message("session_123", "user", "什么是指针？")
-            
-            # 保存 AI 回复（带引用）
-            save_message(
-                "session_123", 
-                "assistant", 
-                "根据【参考资料1】...", 
-                referenced_chunks=[1, 3, 5]
-            )
-        """
+        """保存聊天消息"""
         try:
-            # 查找会话（通过 session_id 字符串）
             session = ChatSession.query.filter_by(session_id=session_id).first()
             
             if not session:
-                raise ValueError(f"会话不存在: {session_id}")
+                print(f"⚠️ 会话不存在: {session_id}")
+                return None
             
-            # 使用 ChatSession 的 add_message 方法
-            # 它会自动处理：消息限制、标题生成、计数更新
-            new_message = session.add_message(role, content)
+            message = ChatMessage(
+                session_id=session.id,
+                role=role,
+                content=content
+            )
             
-            # ⭐⭐⭐ 新增：保存引用关系 ⭐⭐⭐
-            if referenced_chunks:
+            if referenced_chunks and len(referenced_chunks) > 0:
                 print(f"💾 保存引用关系: {len(referenced_chunks)} 个知识块")
-                new_message.set_referenced_chunks(referenced_chunks)
-                
-                # 更新引用计数（可选，用于统计）
-                from models.knowledge_chunk import KnowledgeChunk
-                for chunk_id in referenced_chunks:
-                    chunk = KnowledgeChunk.query.get(chunk_id)
-                    if chunk:
-                        chunk.increment_retrieved()
-                
-                db.session.commit()
-                print(f"   引用的知识块: {referenced_chunks}")
+                chunk_ids = []
+                for chunk_data in referenced_chunks:
+                    if isinstance(chunk_data, dict):
+                        chunk_id = chunk_data.get('id')
+                    else:
+                        chunk_id = chunk_data
+                    if chunk_id:
+                        chunk_ids.append(chunk_id)
+                if chunk_ids:
+                    message.set_referenced_chunks(chunk_ids)
             
-            print(f"💾 保存消息: {role} - {content[:30]}... (会话: {session_id})")
+            session.message_count = ChatMessage.query.filter_by(
+                session_id=session.id
+            ).count() + 1
+            session.updated_at = datetime.now()
             
-            return new_message
+            if session.message_count == 1 and role == 'user':
+                session.title = content[:30] + ('...' if len(content) > 30 else '')
+            
+            db.session.add(message)
+            db.session.commit()
+            
+            print(f"✅ 消息已保存 (ID: {message.id}, 会话: {session.session_id})")
+            return message
             
         except Exception as e:
             print(f"❌ 保存消息失败: {e}")
             db.session.rollback()
-            raise
+            traceback.print_exc()
+            return None
     
-    # ========== 功能 4：获取会话消息 ==========
+    # ========== ⭐⭐⭐ 功能 4：获取会话消息（修复排序）⭐⭐⭐ ==========
     
     @staticmethod
-    def get_session_messages(session_id, limit=50):
+    def get_session_messages(session_id, limit=None):
         """
-        获取指定会话的消息
+        获取会话消息
         
-        Args:
-            session_id: 会话 session_id（字符串）
-            limit: 返回数量（默认50）
-        
-        Returns:
-            list: 消息列表
-            [
-                {"role": "user", "content": "你好", "created_at": "..."},
-                {"role": "assistant", "content": "你好！", "created_at": "..."},
-            ]
-        
-        为什么要 limit？
-        └─ 首次加载时可能只需要最近20条
-           滚动加载更多时再请求更早的
+        ⭐⭐⭐ 关键：确保按 created_at 升序排列（最早的在前）⭐⭐⭐
         """
         try:
-            # 查找会话
             session = ChatSession.query.filter_by(session_id=session_id).first()
             
             if not session:
                 print(f"⚠️ 会话不存在: {session_id}")
                 return []
             
-            # 使用 ChatSession 的 get_messages 方法
-            messages = session.get_messages(limit=limit)
+            # ⭐⭐⭐ 修复：始终按 created_at 升序排列 ⭐⭐⭐
+            query = ChatMessage.query.filter_by(session_id=session.id)\
+                .order_by(ChatMessage.created_at.asc())  # ⭐ 升序：最早的在前
+            
+            if limit:
+                # 如果有限制，取最新的 N 条，但仍需保持时间顺序
+                total = ChatMessage.query.filter_by(session_id=session.id).count()
+                if total > limit:
+                    # 跳过前面的，只取最后 limit 条
+                    query = ChatMessage.query.filter_by(session_id=session.id)\
+                        .order_by(ChatMessage.created_at.asc())\
+                        .offset(total - limit)\
+                        .limit(limit)
+            
+            messages = query.all()
             
             print(f"📬 获取会话消息: {session_id} (共 {len(messages)} 条)")
             
-            return messages
+            # 调试：打印消息顺序
+            if messages:
+                print(f"   第一条: [{messages[0].role}] {messages[0].content[:20]}...")
+                print(f"   最后条: [{messages[-1].role}] {messages[-1].content[:20]}...")
+            
+            return [msg.to_dict() for msg in messages]
             
         except Exception as e:
             print(f"❌ 获取消息失败: {e}")
+            traceback.print_exc()
             return []
     
-    # ========== 功能 5：切换会话 ==========
+    # ========== ⭐⭐⭐ 功能 5：切换会话（修复排序）⭐⭐⭐ ==========
     
     @staticmethod
     def switch_session(user_id, session_id):
         """
-        切换到指定会话
+        切换会话
         
-        Args:
-            user_id: 用户ID
-            session_id: 目标会话ID
-            
-        Returns:
-            dict: 包含会话信息和消息列表
+        ⭐⭐⭐ 关键：确保消息按时间升序返回 ⭐⭐⭐
         """
         try:
             print(f"🔄 切换会话: {session_id}, 用户: {user_id}")
             
-            # 1. 验证会话所有权
             target_session = ChatSession.query.filter_by(
                 session_id=session_id,
                 user_id=user_id
             ).first()
             
             if not target_session:
-                raise ValueError("会话不存在或无权访问")
+                raise ValueError(f"会话不存在: {session_id}")
             
-            # 2. ⭐⭐⭐ 手动更新所有会话状态（最可靠的方式）⭐⭐⭐
-            # 先将所有会话设为非活跃
+            # 更新所有会话状态
             all_sessions = ChatSession.query.filter_by(user_id=user_id).all()
             for session in all_sessions:
-                if session.id == target_session.id:
-                    session.is_active = True
-                    session.updated_at = datetime.now()
-                else:
-                    session.is_active = False
+                session.is_active = (session.id == target_session.id)
+                session.updated_at = datetime.now()
             
-            # 3. 一次性提交
             db.session.commit()
-            
-            # 4. ⭐ 重新查询目标会话，确保获取最新状态
             db.session.refresh(target_session)
             
-            # 5. 获取消息
+            # ⭐⭐⭐ 修复：按 created_at 升序获取消息 ⭐⭐⭐
             messages = ChatMessage.query.filter_by(
                 session_id=target_session.id
-            ).order_by(ChatMessage.created_at.asc()).all()
+            ).order_by(ChatMessage.created_at.asc()).all()  # ⭐ 升序：最早的在前
             
             print(f"✅ 切换成功，消息数: {len(messages)}")
             
+            # 调试：打印消息顺序
+            if messages:
+                print(f"   第一条: [{messages[0].role}] {messages[0].content[:20]}...")
+                print(f"   最后条: [{messages[-1].role}] {messages[-1].content[:20]}...")
+            
             return {
-                'session': {
-                    'session_id': target_session.session_id,
-                    'title': target_session.title,
-                    'is_active': target_session.is_active,
-                    'created_at': target_session.created_at.isoformat(),
-                    'updated_at': target_session.updated_at.isoformat(),
-                    'message_count': len(messages)
-                },
-                'messages': [
-                    {
-                        'role': msg.role,
-                        'content': msg.content,
-                        'created_at': msg.created_at.isoformat()
-                    }
-                    for msg in messages
-                ]
+                'session': target_session.to_dict(),
+                'messages': [msg.to_dict() for msg in messages]
             }
             
         except Exception as e:
+            print(f"❌ 切换会话失败: {e}")
             db.session.rollback()
-            print(f"❌ 切换会话失败: {str(e)}")
-            import traceback
-            traceback.print_exc()
             raise
-   
     
-    # ========== 功能 7：获取 AI 上下文 ==========
+    # ========== 功能 6：获取 AI 上下文 ==========
     
     @staticmethod
     def get_context_for_ai(session_id, limit=None):
-        """
-        获取发送给 AI 的上下文消息（OpenAI API 格式）
-        
-        Args:
-            session_id: 会话 session_id（字符串）
-            limit: ⭐ 已废弃，永远返回全部消息
-        
-        Returns:
-            list: OpenAI 格式的消息列表
-        """
+        """获取发送给 AI 的上下文消息"""
         try:
-            # 查找会话
             session = ChatSession.query.filter_by(session_id=session_id).first()
             
             if not session:
                 print(f"⚠️ 会话不存在: {session_id}")
                 return []
             
-            # ⭐⭐⭐ 修改：获取全部消息（不再限制） ⭐⭐⭐
-            messages = session.get_messages(limit=None)  # ⭐ 传入 None 表示全部
+            # ⭐ 按 created_at 升序查询
+            query = ChatMessage.query.filter_by(session_id=session.id)\
+                .order_by(ChatMessage.created_at.asc())
             
-            # 转换为 OpenAI API 格式
-            context = [
-                {
-                    'role': msg['role'],
-                    'content': msg['content']
-                }
-                for msg in messages
-            ]
+            if limit:
+                total = query.count()
+                if total > limit:
+                    query = ChatMessage.query.filter_by(session_id=session.id)\
+                        .order_by(ChatMessage.created_at.desc())\
+                        .limit(limit)
+                    messages = list(reversed(query.all()))
+                else:
+                    messages = query.all()
+            else:
+                messages = query.all()
+            
+            context = []
+            for msg in messages:
+                context.append({
+                    "role": msg.role,
+                    "content": msg.content
+                })
             
             print(f"🧠 获取 AI 上下文: {session_id} (全部 {len(context)} 条消息)")
-            
             return context
             
         except Exception as e:
-            print(f"❌ 获取 AI 上下文失败: {e}")
+            print(f"❌ 获取上下文失败: {e}")
+            traceback.print_exc()
             return []
     
-    # ========== 辅助方法：获取会话详情 ==========
+    # ========== 其他辅助方法 ==========
     
     @staticmethod
-    def get_session_detail(session_id, user_id):  # ⭐ 确保有两个参数
-        """
-        获取会话详情
-        
-        Args:
-            session_id: 会话ID
-            user_id: 用户ID
-            
-        Returns:
-            ChatSession 对象或 None
-        """
+    def get_session_detail(session_id, user_id):
+        """获取会话详情"""
         try:
-            # 查询会话，确保属于指定用户
             session = ChatSession.query.filter_by(
                 session_id=session_id,
                 user_id=user_id
             ).first()
-            
             return session
-            
         except Exception as e:
-            print(f"❌ 获取会话详情失败: {str(e)}")
+            print(f"❌ 获取会话详情失败: {e}")
             return None
     
-    # ========== 辅助方法：删除会话 ==========
-    
     @staticmethod
-    def delete_session(session_id, user_id):  # ⭐ 确保有两个参数
-        """
-        删除会话及其所有消息
-        
-        Args:
-            session_id: 会话ID
-            user_id: 用户ID
-            
-        Returns:
-            bool: 删除是否成功
-        """
+    def delete_session(session_id, user_id):
+        """删除会话"""
         try:
-            # 1. 验证会话所有权
             session = ChatSession.query.filter_by(
                 session_id=session_id,
                 user_id=user_id
             ).first()
             
             if not session:
-                print(f"❌ 会话不存在: {session_id}")
                 return False
             
-            # 2. 删除该会话的所有消息
             ChatMessage.query.filter_by(session_id=session.id).delete()
-            print(f"✅ 已删除会话 {session_id} 的所有消息")
-            
-            # 3. 删除会话
             db.session.delete(session)
             db.session.commit()
-            print(f"✅ 已删除会话: {session_id}")
             
+            print(f"✅ 会话已删除: {session_id}")
             return True
             
         except Exception as e:
+            print(f"❌ 删除会话失败: {e}")
             db.session.rollback()
-            print(f"❌ 删除会话失败: {str(e)}")
-            import traceback
-            traceback.print_exc()
             return False
     
-    # ⭐ 新增：重命名会话方法
     @staticmethod
     def rename_session(session_id, user_id, new_title):
-        """
-        重命名会话
-        
-        Args:
-            session_id: 会话ID
-            user_id: 用户ID
-            new_title: 新标题
-            
-        Returns:
-            ChatSession: 更新后的会话对象，如果失败返回 None
-        """
+        """重命名会话"""
         try:
-            # 验证会话所有权
             session = ChatSession.query.filter_by(
                 session_id=session_id,
                 user_id=user_id
             ).first()
             
             if not session:
-                print(f"❌ 会话不存在或无权修改: {session_id}")
                 return None
             
-            # 更新标题
-            old_title = session.title
             session.title = new_title
             session.updated_at = datetime.now()
-            
             db.session.commit()
             
-            print(f"✅ 会话重命名成功: '{old_title}' -> '{new_title}'")
-            
+            print(f"✅ 会话已重命名: {session_id} -> {new_title}")
             return session
             
         except Exception as e:
+            print(f"❌ 重命名会话失败: {e}")
             db.session.rollback()
-            print(f"❌ 重命名会话失败: {str(e)}")
-            import traceback
-            traceback.print_exc()
             return None
     
     @staticmethod
     def archive_and_create_new(user_id):
-        """
-        归档当前活跃会话并创建新会话
-        
-        Args:
-            user_id: 用户ID
-            
-        Returns:
-            dict: 新会话信息
-        """
+        """归档当前会话，创建新会话"""
         try:
-            import uuid
-            from datetime import datetime
+            ChatSession.query.filter_by(user_id=user_id).update({'is_active': False})
             
-            print(f"📦 归档当前会话并创建新会话，用户ID: {user_id}")
-            
-            # 1. ⭐⭐⭐ 查询并逐个更新（最可靠）⭐⭐⭐
-            active_sessions = ChatSession.query.filter_by(
-                user_id=user_id,
-                is_active=True
-            ).all()
-            
-            for session in active_sessions:
-                session.is_active = False
-                session.updated_at = datetime.now()
-                print(f"   归档会话: {session.session_id}")
-            
-            # 2. 创建新会话
-            new_session_id = f"session_{uuid.uuid4().hex[:16]}"
             new_session = ChatSession(
-                session_id=new_session_id,
+                session_id=f"session_{uuid.uuid4().hex[:16]}",
                 user_id=user_id,
-                title="新对话",
-                is_active=True,
-                message_count=0
+                title=Config.DEFAULT_SESSION_TITLE,
+                is_active=True
             )
             
             db.session.add(new_session)
-            
-            # 3. 一次性提交所有更改
             db.session.commit()
             
-            # 4. ⭐ 刷新新会话对象
-            db.session.refresh(new_session)
-            
-            print(f"✅ 新会话已创建: {new_session_id}")
-            
-            return {
-                'session_id': new_session.session_id,
-                'title': new_session.title,
-                'is_active': new_session.is_active,
-                'created_at': new_session.created_at.isoformat(),
-                'updated_at': new_session.updated_at.isoformat(),
-                'message_count': 0
-            }
+            print(f"✅ 归档完成，新会话: {new_session.session_id}")
+            return new_session
             
         except Exception as e:
+            print(f"❌ 归档失败: {e}")
             db.session.rollback()
-            print(f"❌ 创建新会话失败: {str(e)}")
-            import traceback
-            traceback.print_exc()
-            return None
+            raise

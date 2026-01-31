@@ -38,20 +38,28 @@ class ChatSession(db.Model):
     
     def get_messages(self, limit=None):
         """
-        获取该会话的最近 N 条消息
+        获取该会话的消息
         
-        Args:
-            limit: 返回的消息数量，None 表示返回全部
+        ⭐⭐⭐ 修复：确保按时间升序返回（最早的在前）⭐⭐⭐
         """
         from models.chat_message import ChatMessage
         
-        query = self.messages.order_by(ChatMessage.created_at.desc())
-        
+        # ⭐ 直接按升序查询，不需要反转
+        query = ChatMessage.query.filter_by(session_id=self.id)\
+            .order_by(ChatMessage.created_at.asc())  # ⭐ 升序：最早的在前
+            
         if limit:
-            query = query.limit(limit)
+            # 如果有限制，取最新的 N 条
+            total = ChatMessage.query.filter_by(session_id=self.id).count()
+            if total > limit:
+                # 计算需要跳过的数量
+                offset = total - limit
+                query = ChatMessage.query.filter_by(session_id=self.id)\
+                    .order_by(ChatMessage.created_at.asc())\
+                    .offset(offset)\
+                    .limit(limit)
         
         messages = query.all()
-        messages.reverse()  # 反转顺序（最旧的在前）
         
         return [msg.to_dict() for msg in messages]
     

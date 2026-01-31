@@ -16,7 +16,7 @@ export const useChatStore = defineStore("chat", () => {
 
   // ========== 计算属性 ==========
 
-  // ⭐⭐⭐ 修改：对话轮数 = 消息数 / 2 ⭐⭐⭐
+  // 对话轮数 = 消息数 / 2
   const currentContextLength = computed(() => {
     return Math.floor(messages.value.length / 2);
   });
@@ -33,7 +33,7 @@ export const useChatStore = defineStore("chat", () => {
     return sessions.value.filter((s) => !s.is_active);
   });
 
-  // ========== ⭐ 新增方法：会话管理 ⭐ ==========
+  // ========== 会话管理方法 ==========
 
   /**
    * 加载会话列表（登录后调用）
@@ -49,14 +49,14 @@ export const useChatStore = defineStore("chat", () => {
         sessions.value = response.sessions;
         console.log(`✅ 加载了 ${sessions.value.length} 个会话`);
 
-        // ⭐ 找到当前活跃会话
+        // 找到当前活跃会话
         const activeSession = sessions.value.find((s) => s.is_active);
 
         if (activeSession) {
           currentSession.value = activeSession;
           sessionId.value = activeSession.session_id;
 
-          // ⭐ 加载该会话的消息
+          // 加载该会话的消息
           await loadSessionMessages(activeSession.session_id);
           console.log(`✅ 当前会话: ${activeSession.title}`);
         } else {
@@ -100,7 +100,7 @@ export const useChatStore = defineStore("chat", () => {
       // 1. 调用 API 切换会话
       const result = await chatAPI.activateSession(targetSessionId);
 
-      // 2. ⭐ 检查返回数据
+      // 2. 检查返回数据
       if (!result || !result.session) {
         console.error("❌ 切换会话失败: 返回数据无效", result);
         throw new Error("切换会话失败：服务器返回数据无效");
@@ -108,7 +108,7 @@ export const useChatStore = defineStore("chat", () => {
 
       // 3. 更新当前会话信息
       currentSession.value = result.session;
-      sessionId.value = result.session.session_id; // ⭐ 使用 session_id 而不是 sessionId
+      sessionId.value = result.session.session_id;
 
       // 4. 更新消息列表
       messages.value = result.messages || [];
@@ -134,7 +134,7 @@ export const useChatStore = defineStore("chat", () => {
   }
 
   /**
-   * 创建新会话（替代原来的 clearContext）
+   * 创建新会话
    */
   async function createNewSession() {
     try {
@@ -143,15 +143,15 @@ export const useChatStore = defineStore("chat", () => {
       const response = await chatAPI.createNewSession();
 
       if (response.status === "success") {
-        // ⭐ 更新当前会话
+        // 更新当前会话
         currentSession.value = response.session;
         sessionId.value = response.session.session_id;
 
-        // ⭐ 清空消息列表
+        // 清空消息列表
         messages.value = [];
         currentReply.value = "";
 
-        // ⭐ 更新会话列表
+        // 更新会话列表
         sessions.value = sessions.value.map((s) => ({
           ...s,
           is_active: false,
@@ -220,7 +220,7 @@ export const useChatStore = defineStore("chat", () => {
               }
             }
           }
-          // ⭐⭐⭐ 修改：删除所有会话后，显示空白页（不自动创建新会话）⭐⭐⭐
+          // 删除所有会话后，显示空白页
           else {
             console.log("📭 所有会话已删除，显示空白页");
 
@@ -230,7 +230,6 @@ export const useChatStore = defineStore("chat", () => {
             messages.value = [];
             currentReply.value = "";
 
-            // ⭐ 提示用户点击"新对话"按钮创建会话
             console.log('💡 提示：点击"新对话"按钮创建新会话');
           }
         } else {
@@ -248,7 +247,7 @@ export const useChatStore = defineStore("chat", () => {
   }
 
   /**
-   * ⭐ 新增：重命名会话
+   * 重命名会话
    * @param {string} sessionId - 会话 ID
    * @param {string} newTitle - 新标题
    */
@@ -288,11 +287,10 @@ export const useChatStore = defineStore("chat", () => {
     }
   }
 
-  // ========== ⭐ 新增：发送流式消息方法 ⭐ ==========
+  // ========== 消息发送方法 ==========
 
   /**
-   * 发送流式消息
-   * @param {string} message - 用户消息
+   * ⭐⭐⭐ 发送流式消息（修复版）⭐⭐⭐
    */
   async function sendMessageStream(message) {
     if (!message.trim()) return;
@@ -303,6 +301,7 @@ export const useChatStore = defineStore("chat", () => {
 
       // 1. 立即添加用户消息到界面
       const userMessage = {
+        id: Date.now(),
         role: "user",
         content: message,
         created_at: new Date().toISOString(),
@@ -310,7 +309,9 @@ export const useChatStore = defineStore("chat", () => {
       messages.value.push(userMessage);
 
       // 2. 添加 AI 消息占位符
+      const aiMessageIndex = messages.value.length; // ⭐ 记录索引
       const aiMessage = {
+        id: Date.now() + 1,
         role: "assistant",
         content: "",
         created_at: new Date().toISOString(),
@@ -325,41 +326,34 @@ export const useChatStore = defineStore("chat", () => {
       await chatAPI.sendMessageStream(
         message,
         sessionId.value,
-        null, // maxContext（已废弃）
+        null,
 
-        // ⭐ onChunk：每收到一块内容
+        // ⭐⭐⭐ onChunk：每收到一块内容，立即更新 ⭐⭐⭐
         (chunk) => {
           currentReply.value += chunk;
-          aiMessage.content = currentReply.value;
+          // ⭐ 直接修改数组中的对象，触发响应式更新
+          messages.value[aiMessageIndex].content = currentReply.value;
         },
 
-        // ⭐ onDone：流式结束
+        // onDone：流式结束
         (newSessionId) => {
           console.log(`✅ 流式输出完成，会话ID: ${newSessionId}`);
 
-          // 更新会话ID（首次发送时后端会创建新会话）
           if (newSessionId && newSessionId !== sessionId.value) {
             sessionId.value = newSessionId;
-
-            // 刷新会话列表
-            loadSessions();
+            console.log(`📍 更新会话ID: ${newSessionId}`);
           }
 
-          // 重置流式状态
           isStreaming.value = false;
           currentReply.value = "";
         },
 
-        // ⭐ onError：错误处理
+        // onError：错误处理
         (error) => {
           console.error("❌ 流式输出错误:", error);
-
-          // 显示错误消息
-          aiMessage.content = `抱歉，发生错误：${error.message}`;
-
-          // 重置状态
+          messages.value[aiMessageIndex].content =
+            `抱歉，发生错误：${error.message}`;
           isStreaming.value = false;
-          currentReply.value = "";
         },
       );
     } catch (error) {
@@ -370,7 +364,53 @@ export const useChatStore = defineStore("chat", () => {
     }
   }
 
-  // ========== ⭐ 新增：重置 Store ⭐ ==========
+  /**
+   * ⭐⭐⭐ 新增：续写上次回答 ⭐⭐⭐
+   */
+  async function continueLastMessage() {
+    console.log("🔄 Store: 开始续写请求");
+
+    // 1. 检查是否有会话
+    if (!sessionId.value) {
+      console.warn("⚠️  无当前会话，无法续写");
+      throw new Error("请先开始一个对话");
+    }
+
+    // 2. 检查是否有消息
+    if (messages.value.length === 0) {
+      console.warn("⚠️  无历史消息，无法续写");
+      throw new Error("没有可续写的内容");
+    }
+
+    // 3. 检查是否正在流式输出
+    if (isStreaming.value) {
+      console.warn("⚠️  正在生成中，请稍候");
+      return;
+    }
+
+    // 4. 发送"继续"消息（复用 sendMessageStream 方法）
+    console.log('📤 发送续写指令: "继续"');
+    await sendMessageStream("继续");
+  }
+
+  // ========== 工具方法 ==========
+
+  /**
+   * 清除上下文（实际是创建新会话）
+   */
+  async function clearContext() {
+    try {
+      console.log("🗑️ 清除上下文（创建新会话）...");
+
+      // 调用创建新会话 API
+      await createNewSession();
+
+      console.log("✅ 上下文已清除");
+    } catch (error) {
+      console.error("❌ 清除上下文失败:", error);
+      throw error;
+    }
+  }
 
   /**
    * 重置整个 Store（登出时调用）
@@ -388,25 +428,6 @@ export const useChatStore = defineStore("chat", () => {
     isLoadingSessions.value = false;
 
     console.log("✅ 聊天 Store 已重置");
-  }
-
-  // ========== ⭐ 修改：清除上下文（改为创建新会话） ⭐ ==========
-
-  /**
-   * 清除上下文（实际是创建新会话）
-   */
-  async function clearContext() {
-    try {
-      console.log("🗑️ 清除上下文（创建新会话）...");
-
-      // 调用创建新会话 API
-      await createNewSession();
-
-      console.log("✅ 上下文已清除");
-    } catch (error) {
-      console.error("❌ 清除上下文失败:", error);
-      throw error;
-    }
   }
 
   // ========== 导出 ==========
@@ -433,8 +454,9 @@ export const useChatStore = defineStore("chat", () => {
     createNewSession,
     deleteSession,
     renameSession,
-    sendMessageStream, // ⭐ 新增导出
+    sendMessageStream,
+    continueLastMessage,
     clearContext,
-    resetStore, // ⭐ 新增导出
+    resetStore,
   };
 });

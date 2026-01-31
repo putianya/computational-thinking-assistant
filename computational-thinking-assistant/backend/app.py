@@ -2,21 +2,22 @@
 """
 Flask 应用主程序 - 后端 API 服务
 """
+import os
 import sys
 import io
-import uuid
 import json
-import os
-from flask import Flask, jsonify, request, Response, stream_with_context
+import time
+import traceback  # ⭐⭐⭐ 添加这行 ⭐⭐⭐
+
+from flask import Flask, jsonify, request, Response, stream_with_context, g
 from flask_cors import CORS
-from config import Config
 from datetime import datetime
+
+from config import Config
 from database import db, init_db
 from services.auth_service import AuthService
 from services.chat_service import ChatService
-from services.llm_service import LLMService
 from utils.decorators import login_required
-from flask import g
 
 # 设置标准输出为 UTF-8 编码
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
@@ -88,73 +89,68 @@ def chat_stream():
         user_message = data.get('message', '').strip()
         session_id = data.get('session_id')
         
-        # ⭐⭐⭐ 修复：移除 max_context（已不需要） ⭐⭐⭐
-        # ❌ 删除这行：max_context = data.get('max_context', Config.MAX_CONTEXT_FOR_AI)
-        
         if not user_message:
             return jsonify({'status': 'error', 'message': '消息不能为空'}), 400
         
-        # ⭐ 如果没有 session_id，创建新会话
         if not session_id:
-            from services.chat_service import ChatService
             session = ChatService.get_or_create_active_session(g.user_id)
             session_id = session.session_id
-            print(f"✅ 创建新会话: {session_id}")
         
-        import time
-        start_time = time.time()
-        # ⭐ 修改日志输出
-        print(f"📨 收到流式请求: {user_message[:50]}... (会话: {session_id})")
+        # ⭐ 在外部记录开始时间
+        request_start_time = time.time()
+        print(f"\n{'='*60}")
+        print(f"📨 收到流式请求: {user_message[:50]}...")
+        print(f"📍 会话: {session_id}")
+        print(f"{'='*60}")
         
         service = get_llm_service()
         
         def generate():
+            chunk_count = 0
+            first_chunk_time = None
+            
             try:
-                # ⭐ 先发送 session_id
-                yield f"data: {json.dumps({'type': 'session', 'session_id': session_id}, ensure_ascii=False)}\n\n"
+                # 发送会话 ID
+                yield f"data: {json.dumps({'type': 'session', 'session_id': session_id})}\n\n"
                 
-                first_chunk_time = None
-                chunk_count = 0
-                
-                # ⭐⭐⭐ 修复：移除 max_context 参数 ⭐⭐⭐
-                # ❌ 旧代码：for content in service.chat_stream(user_message, session_id, max_context):
-                # ✅ 新代码：不传 max_context，LLMService 会自动读取全部消息
-                for content in service.chat_stream(user_message, session_id):
-                    if chunk_count == 0:
-                        first_chunk_time = time.time()
-                        print(f"⚡ 首字节延迟: {first_chunk_time - start_time:.2f}秒")
-                    
+                # 流式输出内容
+                for chunk in service.chat_stream(user_message, session_id):
                     chunk_count += 1
-                    chunk_data = json.dumps({'type': 'content', 'content': content}, ensure_ascii=False)
-                    yield f"data: {chunk_data}\n\n"
+                    
+                    # ⭐⭐⭐ 在第一个内容块时记录时间 ⭐⭐⭐
+                    if first_chunk_time is None:
+                        first_chunk_time = time.time()
+                        latency = first_chunk_time - request_start_time
+                        print(f"⚡ 首字节延迟（请求→首块）: {latency:.2f}秒")
+                    
+                    yield f"data: {json.dumps({'type': 'content', 'content': chunk})}\n\n"
                 
-                yield f"data: {json.dumps({'type': 'done'}, ensure_ascii=False)}\n\n"
+                # 完成信号
+                yield f"data: {json.dumps({'type': 'done'})}\n\n"
                 
-                total_time = time.time() - start_time
+                total_time = time.time() - request_start_time
                 print(f"✅ 流式响应完成: 共 {chunk_count} 个块，总耗时 {total_time:.2f}秒")
                 
             except Exception as e:
-                print(f"❌ 流式生成错误: {str(e)}")
-                import traceback
+                print(f"❌ 流式生成错误: {e}")
                 traceback.print_exc()
-                error_data = json.dumps({'type': 'error', 'message': str(e)}, ensure_ascii=False)
-                yield f"data: {error_data}\n\n"
+                yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
         
         return Response(
             stream_with_context(generate()),
             mimetype='text/event-stream',
             headers={
-                'Cache-Control': 'no-cache',
-                'X-Accel-Buffering': 'no',
-                'Connection': 'keep-alive'
+                'Cache-Control': 'no-cache, no-store, must-revalidate',
+                'X-Accel-Buffering': 'no',  # ⭐ 禁用 Nginx 缓冲
+                'Connection': 'keep-alive',
+                'Content-Type': 'text/event-stream; charset=utf-8',
             }
         )
         
     except Exception as e:
-        print(f"❌ 处理流式请求时出错: {str(e)}")
-        import traceback
+        print(f"❌ 处理请求错误: {e}")
         traceback.print_exc()
-        return jsonify({'status': 'error', 'message': f'处理请求时出错: {str(e)}'}), 500
+        return jsonify({'status': 'error', 'message': str(e)}), 500
 
 @app.route('/api/chat/clear-context', methods=['POST'])
 @login_required

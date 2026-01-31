@@ -54,7 +54,7 @@
             <p>在下方输入框输入消息，开始与 AI 助手交流</p>
           </div>
 
-          <!-- ⭐ 消息列表（修复 key） -->
+          <!-- ⭐⭐⭐ 修改：监听 continue 事件 ⭐⭐⭐ -->
           <ChatMessage
             v-for="(msg, index) in chatStore.messages"
             :key="`${msg.created_at}-${index}`"
@@ -64,6 +64,7 @@
             :isStreaming="
               index === chatStore.messages.length - 1 && chatStore.isStreaming
             "
+            @continue="handleContinue"
           />
         </div>
 
@@ -147,7 +148,22 @@ function scrollToBottom() {
 }
 
 /**
- * ⭐ 清除上下文处理（创建新会话）
+ * ⭐⭐⭐ 新增：处理"继续"按钮点击 ⭐⭐⭐
+ */
+async function handleContinue() {
+  console.log("🔄 触发续写请求");
+
+  try {
+    await chatStore.continueLastMessage();
+    console.log("✅ 续写请求已发送");
+  } catch (error) {
+    console.error("❌ 续写失败:", error);
+    alert("续写失败，请重试");
+  }
+}
+
+/**
+ * 清除上下文处理（创建新会话）
  */
 async function handleClearContext() {
   if (
