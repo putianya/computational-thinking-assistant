@@ -520,7 +520,7 @@ function handlePageChange(page) {
 <style scoped>
 /* ========== 整体布局 ========== */
 .knowledge-base {
-  padding: 24px;
+  padding: 16px; /* ⭐ 改为 16px（原来 24px）*/
   background: #f5f5f5;
   min-height: 100vh;
 }
@@ -530,16 +530,16 @@ function handlePageChange(page) {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 24px;
+  margin-bottom: 12px; /* ⭐ 改为 12px（原来 24px）*/
   background: white;
-  padding: 20px;
+  padding: 16px; /* ⭐ 改为 16px（原来 20px）*/
   border-radius: 12px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
 }
 
 .header h1 {
   margin: 0;
-  font-size: 24px;
+  font-size: 22px; /* ⭐ 改为 22px（原来 24px）*/
   color: #333;
 }
 
@@ -585,23 +585,26 @@ function handlePageChange(page) {
 /* ========== 统计卡片 ========== */
 .stats-section {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-  gap: 16px;
-  margin-bottom: 24px;
+  grid-template-columns: repeat(
+    auto-fit,
+    minmax(180px, 1fr)
+  ); /* ⭐ 改为 180px */
+  gap: 8px; /* ⭐ 改为 8px（原来 12px）*/
+  margin-bottom: 12px; /* ⭐ 改为 12px（原来 20px）*/
 }
 
 .stat-card {
   background: white;
-  padding: 20px;
-  border-radius: 12px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  padding: 12px; /* ⭐ 改为 12px（原来 16px）*/
+  border-radius: 8px; /* ⭐ 改为 8px（原来 10px）*/
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: 10px; /* ⭐ 改为 10px（原来 12px）*/
 }
 
 .stat-icon {
-  font-size: 48px;
+  font-size: 32px; /* ⭐ 改为 32px（原来 36px）*/
 }
 
 .stat-content {
@@ -609,24 +612,24 @@ function handlePageChange(page) {
 }
 
 .stat-value {
-  font-size: 32px;
+  font-size: 22px; /* ⭐ 改为 22px（原来 24px）*/
   font-weight: 600;
   color: #333;
 }
 
 .stat-label {
-  font-size: 14px;
+  font-size: 12px; /* ⭐ 改为 12px（原来 13px）*/
   color: #666;
-  margin-top: 4px;
+  margin-top: 2px;
 }
 
 /* ========== 过滤器 ========== */
 .filters {
   display: flex;
   gap: 12px;
-  margin-bottom: 16px;
+  margin-bottom: 8px; /* ⭐ 改为 8px（原来 16px）*/
   background: white;
-  padding: 16px;
+  padding: 12px; /* ⭐ 改为 12px（原来 16px）*/
   border-radius: 12px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
 }
@@ -653,98 +656,119 @@ function handlePageChange(page) {
   background: #e0e0e0;
 }
 
-/* ========== 知识块列表 ========== */
+/* ========== 知识块列表（修复表头割裂感）========== */
 .chunks-section {
   background: white;
-  padding: 20px;
+  padding: 0; /* ⭐⭐⭐ 改为 0（原来 20px）⭐⭐⭐ */
   border-radius: 12px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-}
-
-.loading {
-  text-align: center;
-  padding: 40px;
-  color: #999;
-  font-size: 16px;
-}
-
-.empty-state {
-  text-align: center;
-  padding: 60px 20px;
-}
-
-.empty-icon {
-  font-size: 64px;
-  margin-bottom: 16px;
-}
-
-.empty-action {
-  padding: 10px 20px;
-  background: #667eea;
-  color: white;
-  border: none;
-  border-radius: 8px;
-  cursor: pointer;
-  margin-top: 16px;
+  max-height: 600px;
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 
 .chunks-table {
   width: 100%;
   border-collapse: collapse;
+  table-layout: fixed;
+}
+
+/* ⭐⭐⭐ 修复：表头样式优化 ⭐⭐⭐ */
+.chunks-table thead {
+  position: sticky;
+  top: 0;
+  background: #fafafa; /* ⭐ 改为浅灰色（原来 white）*/
+  z-index: 10;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05); /* ⭐ 阴影减小 */
 }
 
 .chunks-table th {
-  background: #f5f5f5;
-  padding: 12px;
+  background: #fafafa; /* ⭐ 改为浅灰色 */
+  padding: 10px 12px; /* ⭐ 改为 10px 12px（原来 12px）*/
   text-align: left;
   font-weight: 600;
+  font-size: 13px; /* ⭐ 改为 13px（原来 14px）*/
   color: #666;
-  border-bottom: 2px solid #e0e0e0;
+  border-bottom: 1px solid #e0e0e0; /* ⭐ 改为 1px（原来 2px）*/
+}
+
+/* ⭐⭐⭐ 新增：第一个/最后一个表头圆角 ⭐⭐⭐ */
+.chunks-table th:first-child {
+  padding-left: 16px; /* ⭐ 左边距增加 */
+  border-top-left-radius: 12px;
+}
+
+.chunks-table th:last-child {
+  padding-right: 16px; /* ⭐ 右边距增加 */
+  border-top-right-radius: 12px;
 }
 
 .chunks-table td {
-  padding: 12px;
-  border-bottom: 1px solid #f0f0f0;
+  padding: 10px 12px; /* ⭐ 改为 10px 12px（原来 12px）*/
+  border-bottom: 1px solid #f5f5f5; /* ⭐ 改为浅色边框 */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 14px; /* ⭐ 新增：统一字体大小 */
 }
 
+/* ⭐⭐⭐ 新增：第一个/最后一个单元格边距 ⭐⭐⭐ */
+.chunks-table td:first-child {
+  padding-left: 16px;
+}
+
+.chunks-table td:last-child {
+  padding-right: 16px;
+}
+
+/* ⭐⭐⭐ 新增：鼠标悬停行高亮 ⭐⭐⭐ */
+.chunks-table tbody tr:hover {
+  background: #f9fafb;
+}
+
+/* 来源标签 */
 .source-tag {
   display: inline-block;
-  padding: 4px 8px;
+  padding: 4px 10px; /* ⭐ 改为 4px 10px（原来 6px 12px）*/
   background: #e3f2fd;
   color: #1976d2;
   border-radius: 4px;
-  font-size: 12px;
-}
-
-.content-preview {
-  max-width: 300px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  color: #666;
-}
-
-.heat-badge {
-  display: inline-block;
-  padding: 4px 8px;
-  background: #fff3e0;
-  color: #f57c00;
-  border-radius: 4px;
-  font-size: 12px;
+  font-size: 12px; /* ⭐ 改为 12px（原来 13px）*/
   font-weight: 500;
 }
 
+/* 内容预览 */
+.content-preview {
+  max-width: 400px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: #555;
+  font-size: 13px; /* ⭐ 改为 13px */
+}
+
+/* 热度徽章 */
+.heat-badge {
+  display: inline-block;
+  padding: 4px 10px; /* ⭐ 改为 4px 10px */
+  background: #fff3e0;
+  color: #f57c00;
+  border-radius: 4px;
+  font-size: 12px; /* ⭐ 改为 12px */
+  font-weight: 500;
+}
+
+/* 操作按钮 */
 .actions-cell {
   display: flex;
-  gap: 8px;
+  gap: 6px; /* ⭐ 改为 6px（原来 8px）*/
 }
 
 .action-btn {
-  padding: 6px 10px;
+  padding: 5px 8px; /* ⭐ 改为 5px 8px（原来 6px 10px）*/
   border: none;
   border-radius: 4px;
   cursor: pointer;
-  font-size: 14px;
+  font-size: 13px; /* ⭐ 改为 13px（原来 14px）*/
   transition: all 0.2s;
 }
 
@@ -754,49 +778,61 @@ function handlePageChange(page) {
 }
 
 .edit-btn:hover {
-  background: #1976d2;
-  color: white;
+  background: #bbdefb;
 }
 
 .delete-btn {
   background: #ffebee;
-  color: #d32f2f;
+  color: #c62828;
 }
 
 .delete-btn:hover {
-  background: #d32f2f;
-  color: white;
+  background: #ffcdd2;
 }
 
-/* ========== 分页 ========== */
-.pagination {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  gap: 16px;
-  margin-top: 20px;
+/* ========== 滚动条样式美化 ========== */
+.chunks-section::-webkit-scrollbar {
+  width: 6px; /* ⭐ 改为 6px（原来 8px）*/
 }
 
-.page-btn {
-  padding: 8px 16px;
-  background: #667eea;
-  color: white;
-  border: none;
-  border-radius: 6px;
-  cursor: pointer;
+.chunks-section::-webkit-scrollbar-track {
+  background: #f5f5f5;
+  border-radius: 3px;
 }
 
-.page-btn:disabled {
-  background: #ccc;
-  cursor: not-allowed;
+.chunks-section::-webkit-scrollbar-thumb {
+  background: #d0d0d0; /* ⭐ 改为浅色 */
+  border-radius: 3px;
+  transition: background 0.2s;
 }
 
-.page-info {
-  color: #666;
-  font-size: 14px;
+.chunks-section::-webkit-scrollbar-thumb:hover {
+  background: #aaa;
 }
 
-/* ========== 编辑对话框 ========== */
+/* ========== 加载/空状态 ========== */
+.loading,
+.empty-state {
+  text-align: center;
+  padding: 40px 20px;
+  color: #999;
+}
+
+.loading {
+  font-size: 16px;
+}
+
+.empty-state {
+  font-size: 15px;
+}
+
+.empty-icon {
+  font-size: 48px;
+  margin-bottom: 12px;
+  opacity: 0.5;
+}
+
+/* ========== 编辑对话框（保持不变）========== */
 .modal-overlay {
   position: fixed;
   top: 0;
@@ -891,6 +927,42 @@ function handlePageChange(page) {
 
 .save-btn:disabled {
   background: #ccc;
+}
+
+/* ========== 分页组件（保持不变）========== */
+.pagination {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 8px;
+  margin-top: 16px;
+  padding: 16px;
+  background: white;
+  border-radius: 12px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.page-btn {
+  padding: 8px 12px;
+  border: 1px solid #e0e0e0;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+  transition: all 0.2s;
+}
+
+.page-btn:hover:not(:disabled) {
+  background: #f0f4ff;
+  border-color: #667eea;
+}
+
+.page-btn:disabled {
+  opacity: 0.5;
   cursor: not-allowed;
+}
+
+.page-info {
+  font-size: 14px;
+  color: #666;
 }
 </style>

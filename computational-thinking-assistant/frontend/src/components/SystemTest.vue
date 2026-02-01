@@ -45,7 +45,7 @@ import { chatAPI } from "../api/chat";
 const isLoading = ref(false);
 const result = ref(null);
 const errorMessage = ref("");
-const isCollapsed = ref(false); // ⭐ 新增：控制折叠状态
+const isCollapsed = ref(true); // ⭐⭐⭐ 修改：默认折叠（改为 true）⭐⭐⭐
 
 const handleTest = async () => {
   isLoading.value = true;
@@ -63,7 +63,7 @@ const handleTest = async () => {
   }
 };
 
-// ⭐ 新增：收起/展开切换
+// 收起/展开切换
 const handleCollapse = () => {
   isCollapsed.value = !isCollapsed.value;
 };

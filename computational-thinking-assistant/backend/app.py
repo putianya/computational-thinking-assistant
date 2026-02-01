@@ -792,7 +792,7 @@ def upload_document():
         
         # 导入导入函数
         sys.path.insert(0, str(Path(__file__).resolve().parent / 'scripts'))
-        from import_knowledge import import_single_file
+        from scripts.import_knowledge import import_single_file
         
         # 调用导入函数
         import_result = import_single_file(file_path)
