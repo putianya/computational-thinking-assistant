@@ -1329,6 +1329,294 @@ def update_knowledge_chunk(chunk_id):
 
 # ...existing code...
 
+# ========== ⭐⭐⭐ 用户管理 API（仅管理员）⭐⭐⭐ ==========
+
+@app.route('/api/admin/users', methods=['GET'])
+@login_required
+@require_role('admin')
+def get_all_users():
+    """
+    获取所有用户列表
+    
+    权限：仅管理员
+    
+    返回格式：
+    {
+        "status": "success",
+        "data": {
+            "users": [
+                {
+                    "id": 1,
+                    "username": "student1",
+                    "nickname": "张三",
+                    "role": "student",
+                    "role_display": "学生",
+                    "email": "student1@example.com",
+                    "is_active": true,
+                    "created_at": "2026-01-26T10:00:00",
+                    "last_login": "2026-02-01T15:30:00"
+                }
+            ],
+            "total": 10
+        }
+    }
+    """
+    try:
+        from models.user import User
+        
+        # 查询所有用户（按创建时间降序）
+        users = User.query.order_by(User.created_at.desc()).all()
+        
+        print(f"📋 查询用户列表: 共 {len(users)} 个用户")
+        
+        return jsonify({
+            'status': 'success',
+            'data': {
+                'users': [user.to_dict() for user in users],
+                'total': len(users)
+            }
+        }), 200
+        
+    except Exception as e:
+        print(f"❌ 获取用户列表失败: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            'status': 'error',
+            'message': f'获取用户列表失败: {str(e)}'
+        }), 500
+
+
+@app.route('/api/admin/users/<int:user_id>/role', methods=['PUT'])
+@login_required
+@require_permission('change_user_role')
+def change_user_role(user_id):
+    """
+    修改用户角色
+    
+    权限：需要 change_user_role 权限（管理员）
+    
+    请求格式：
+    {
+        "role": "teacher"  // student | teacher | admin
+    }
+    
+    返回格式：
+    {
+        "status": "success",
+        "message": "用户 student1 角色已更新为 教师",
+        "data": {
+            "id": 1,
+            "username": "student1",
+            "role": "teacher",
+            "role_display": "教师"
+        }
+    }
+    """
+    try:
+        from models.user import User
+        
+        # 获取请求数据
+        data = request.get_json()
+        new_role = data.get('role')
+        
+        if not new_role:
+            return jsonify({
+                'status': 'error',
+                'message': '请提供新角色'
+            }), 400
+        
+        # 验证角色是否合法
+        valid_roles = ['student', 'teacher', 'admin']
+        if new_role not in valid_roles:
+            return jsonify({
+                'status': 'error',
+                'message': f'无效的角色，可选值: {", ".join(valid_roles)}'
+            }), 400
+        
+        # 不能修改自己的角色
+        if user_id == g.user_id:
+            return jsonify({
+                'status': 'error',
+                'message': '不能修改自己的角色'
+            }), 400
+        
+        # 查询目标用户
+        user = User.query.get(user_id)
+        
+        if not user:
+            return jsonify({
+                'status': 'error',
+                'message': '用户不存在'
+            }), 404
+        
+        # 记录旧角色
+        old_role = user.role
+        
+        # 更新角色
+        success = user.set_role(new_role)
+        
+        if success:
+            print(f"✅ 用户 {user.username} 角色已更新: {old_role} -> {new_role}")
+            
+            return jsonify({
+                'status': 'success',
+                'message': f'用户 {user.username} 角色已更新为 {user.get_role_display()}',
+                'data': user.to_dict()
+            }), 200
+        else:
+            return jsonify({
+                'status': 'error',
+                'message': '角色更新失败'
+            }), 500
+            
+    except Exception as e:
+        print(f"❌ 修改用户角色失败: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            'status': 'error',
+            'message': f'修改用户角色失败: {str(e)}'
+        }), 500
+
+
+@app.route('/api/admin/users/<int:user_id>/status', methods=['PUT'])
+@login_required
+@require_permission('manage_users')
+def toggle_user_status(user_id):
+    """
+    启用/禁用用户
+    
+    权限：需要 manage_users 权限（管理员）
+    
+    请求格式：
+    {
+        "is_active": false  // true | false
+    }
+    
+    返回格式：
+    {
+        "status": "success",
+        "message": "用户 student1 已被禁用",
+        "data": {
+            "id": 1,
+            "username": "student1",
+            "is_active": false
+        }
+    }
+    """
+    try:
+        from models.user import User
+        
+        # 获取请求数据
+        data = request.get_json()
+        is_active = data.get('is_active')
+        
+        if is_active is None:
+            return jsonify({
+                'status': 'error',
+                'message': '请提供 is_active 参数'
+            }), 400
+        
+        # 不能禁用自己
+        if user_id == g.user_id:
+            return jsonify({
+                'status': 'error',
+                'message': '不能禁用自己的账号'
+            }), 400
+        
+        # 查询目标用户
+        user = User.query.get(user_id)
+        
+        if not user:
+            return jsonify({
+                'status': 'error',
+                'message': '用户不存在'
+            }), 404
+        
+        # 更新状态
+        user.is_active = is_active
+        db.session.commit()
+        
+        action = '启用' if is_active else '禁用'
+        print(f"✅ 用户 {user.username} 已被{action}")
+        
+        return jsonify({
+            'status': 'success',
+            'message': f'用户 {user.username} 已被{action}',
+            'data': user.to_dict()
+        }), 200
+        
+    except Exception as e:
+        print(f"❌ 切换用户状态失败: {e}")
+        db.session.rollback()
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            'status': 'error',
+            'message': f'切换用户状态失败: {str(e)}'
+        }), 500
+
+
+@app.route('/api/admin/users/<int:user_id>', methods=['DELETE'])
+@login_required
+@require_permission('delete_user')
+def delete_user(user_id):
+    """
+    删除用户（危险操作）
+    
+    权限：需要 delete_user 权限（管理员）
+    
+    返回格式：
+    {
+        "status": "success",
+        "message": "用户 student1 已被删除"
+    }
+    """
+    try:
+        from models.user import User
+        
+        # 不能删除自己
+        if user_id == g.user_id:
+            return jsonify({
+                'status': 'error',
+                'message': '不能删除自己的账号'
+            }), 400
+        
+        # 查询目标用户
+        user = User.query.get(user_id)
+        
+        if not user:
+            return jsonify({
+                'status': 'error',
+                'message': '用户不存在'
+            }), 404
+        
+        username = user.username
+        
+        # 删除用户（会级联删除相关会话和消息）
+        db.session.delete(user)
+        db.session.commit()
+        
+        print(f"✅ 用户 {username} 已被删除")
+        
+        return jsonify({
+            'status': 'success',
+            'message': f'用户 {username} 已被删除'
+        }), 200
+        
+    except Exception as e:
+        print(f"❌ 删除用户失败: {e}")
+        db.session.rollback()
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            'status': 'error',
+            'message': f'删除用户失败: {str(e)}'
+        }), 500
+
+# ...existing code...
+
 @app.errorhandler(404)
 def not_found(error):
     return jsonify({'status': 'error', 'message': '页面不存在'}), 404

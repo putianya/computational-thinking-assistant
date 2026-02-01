@@ -164,7 +164,7 @@ export const chatAPI = {
   },
 
   async createNewSession() {
-    return apiClient.post("/sessions");
+    return apiClient.post("/sessions/new");
   },
 
   async activateSession(sessionId) {

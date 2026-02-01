@@ -9,7 +9,7 @@ from config import Config
 from services.chat_service import ChatService
 from services.vector_service import get_vector_service
 from utils.question_classifier import classify_question
-
+from models.knowledge_chunk import KnowledgeChunk
 
 class LLMService:
     """LLM 服务类"""
@@ -164,15 +164,24 @@ class LLMService:
                 
                 try:
                     results = self.vector_service.search(
-                        query=user_message,
+                        query=user_message, 
                         top_k=top_k
                     )
                     
+                    # 过滤低相似度结果
                     filtered_results = [
                         doc for doc in results 
                         if doc.get('score', 0) >= threshold
                     ]
-                    print(f"🔍 检索耗时: {time.time() - search_start:.2f}秒, 结果: {len(filtered_results)} 个")
+                    
+                    # ⭐⭐⭐ 新增：累加热度 ⭐⭐⭐
+                    for result in filtered_results:
+                        vector_id = result.get('id')
+                        if vector_id:
+                            chunk = KnowledgeChunk.get_by_vector_id(vector_id)
+                            if chunk:
+                                chunk.increment_retrieved()
+                                print(f"📈 知识块 {chunk.id} 热度 +1 (当前: {chunk.retrieved_count})")
                     
                 except Exception as e:
                     print(f"⚠️ 检索失败: {e}")
@@ -284,3 +293,9 @@ class LLMService:
             formatted.append(f"【参考资料 {i}】\n来源：{metadata.get('source', 'N/A')}\n内容：{text[:500]}...")
         
         return "\n".join(formatted)
+
+    # 批量更新热度（性能更好）
+    def batch_increment_retrieved(self, chunk_ids):
+        """批量更新热度"""
+        if chunk_ids:
+            KnowledgeChunk.batch_increment_retrieved(chunk_ids)

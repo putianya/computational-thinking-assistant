@@ -320,24 +320,64 @@ class ChatService:
     
     @staticmethod
     def archive_and_create_new(user_id):
-        """归档当前会话，创建新会话"""
-        try:
-            ChatSession.query.filter_by(user_id=user_id).update({'is_active': False})
+        """
+        归档当前会话，创建新会话
+        
+        流程：
+        1. 将当前用户所有会话设为非活跃（归档）
+        2. 创建新的活跃会话
+        3. 返回新会话信息
+        
+        Args:
+            user_id: 用户 ID
             
+        Returns:
+            dict: 新会话信息
+        """
+        try:
+            import uuid
+            from datetime import datetime
+            
+            print(f"\n{'='*60}")
+            print(f"📝 归档并创建新会话")
+            print(f"   用户 ID: {user_id}")
+            print(f"{'='*60}")
+            
+            # 1. 将所有现有会话设为非活跃（归档）
+            existing_sessions = ChatSession.query.filter_by(user_id=user_id).all()
+            archived_count = 0
+            
+            for session in existing_sessions:
+                if session.is_active:
+                    session.is_active = False
+                    session.updated_at = datetime.now()
+                    archived_count += 1
+            
+            print(f"   归档会话数: {archived_count}")
+            
+            # 2. 创建新会话
             new_session = ChatSession(
                 session_id=f"session_{uuid.uuid4().hex[:16]}",
                 user_id=user_id,
                 title=Config.DEFAULT_SESSION_TITLE,
-                is_active=True
+                is_active=True,
+                created_at=datetime.now(),
+                updated_at=datetime.now(),
+                message_count=0
             )
             
             db.session.add(new_session)
             db.session.commit()
             
-            print(f"✅ 归档完成，新会话: {new_session.session_id}")
-            return new_session
+            print(f"✅ 新会话创建成功: {new_session.session_id}")
+            print(f"   标题: {new_session.title}")
+            print(f"{'='*60}\n")
+            
+            return new_session.to_dict()
             
         except Exception as e:
-            print(f"❌ 归档失败: {e}")
+            print(f"❌ 归档并创建新会话失败: {e}")
+            import traceback
+            traceback.print_exc()
             db.session.rollback()
             raise

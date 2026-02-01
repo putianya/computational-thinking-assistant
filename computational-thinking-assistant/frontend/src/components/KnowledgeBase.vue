@@ -1,26 +1,21 @@
 <!-- filepath: s:\Python__GraduationProject\computational-thinking-assistant\frontend\src\components\KnowledgeBase.vue -->
 <template>
   <div class="knowledge-base">
-    <!-- 顶部功能栏 -->
+    <!-- 头部功能栏 -->
     <div class="header">
       <h1>📚 知识库管理</h1>
-
       <div class="actions">
-        <!-- 搜索框 -->
         <input
           v-model="searchQuery"
-          type="text"
-          placeholder="🔍 搜索知识块..."
-          class="search-input"
           @input="handleSearch"
+          type="text"
+          placeholder="搜索知识内容..."
+          class="search-input"
         />
-
-        <!-- ⭐⭐⭐ 上传按钮（权限控制）⭐⭐⭐ -->
-        <label v-if="authStore.hasPermission('upload_doc')" class="upload-btn">
+        <button @click="handleUpload" class="upload-btn">
           <i class="fas fa-upload"></i>
           上传文档
-          <input type="file" accept=".md" @change="handleFileSelect" hidden />
-        </label>
+        </button>
       </div>
     </div>
 
@@ -46,11 +41,9 @@
         <div class="stat-icon">🔥</div>
         <div class="stat-content">
           <div class="stat-value">
-            {{ stats.hot_chunks?.[0]?.chapter || "暂无" }}
+            {{ stats.hot_chunks ? stats.hot_chunks[0]?.retrieved_count : 0 }}次
           </div>
-          <div class="stat-label">
-            热门内容 ({{ stats.hot_chunks?.[0]?.retrieved_count || 0 }}次)
-          </div>
+          <div class="stat-label">热门内容</div>
         </div>
       </div>
     </div>
@@ -63,8 +56,12 @@
         class="filter-select"
       >
         <option value="">全部来源</option>
-        <option v-for="src in sources" :key="src.name" :value="src.name">
-          {{ src.name }} ({{ src.count }})
+        <option
+          v-for="source in sources"
+          :key="source.name"
+          :value="source.name"
+        >
+          {{ source.name }} ({{ source.count }})
         </option>
       </select>
 
@@ -74,91 +71,113 @@
         class="filter-select"
       >
         <option value="">全部章节</option>
-        <option v-for="ch in chapters" :key="ch.name" :value="ch.name">
-          {{ ch.name }} ({{ ch.count }})
+        <option
+          v-for="chapter in chapters"
+          :key="chapter.name"
+          :value="chapter.name"
+        >
+          {{ chapter.name }} ({{ chapter.count }})
         </option>
       </select>
 
-      <button @click="resetFilters" class="reset-btn">重置</button>
+      <button @click="handleResetFilter" class="reset-btn">重置</button>
+    </div>
+
+    <!-- 加载中 -->
+    <div v-if="isLoading" class="loading">
+      <i class="fas fa-spinner fa-spin"></i>
+      加载中...
+    </div>
+
+    <!-- 空状态 -->
+    <div v-else-if="chunks.length === 0" class="empty-state">
+      <div class="empty-icon">📭</div>
+      <p>暂无知识块数据</p>
     </div>
 
     <!-- 知识块列表 -->
-    <div class="chunks-section">
-      <!-- 加载中 -->
-      <div v-if="isLoading" class="loading">
-        <i class="fas fa-spinner fa-spin"></i>
-        加载中...
-      </div>
-
-      <!-- 空状态 -->
-      <div v-else-if="chunks.length === 0" class="empty-state">
-        <div class="empty-icon">📭</div>
-        <p>暂无知识块</p>
-        <!-- ⭐ 只有有权限的用户才能看到上传提示 -->
-        <button
-          v-if="authStore.hasPermission('upload_doc')"
-          @click="handleUploadClick"
-          class="empty-action"
-        >
-          上传第一个文档
-        </button>
-      </div>
-
-      <!-- 知识块表格 -->
-      <table v-else class="chunks-table">
+    <div v-else class="chunks-section">
+      <table class="chunks-table">
         <thead>
           <tr>
-            <th>ID</th>
-            <th>来源</th>
-            <th>章节</th>
+            <!-- ⭐ ID 列（可排序） -->
+            <th @click="handleSort('id')" class="sortable">
+              ID
+              <span class="sort-icon">
+                <i
+                  v-if="sortField === 'id' && sortOrder === 'asc'"
+                  class="fas fa-caret-up"
+                ></i>
+                <i
+                  v-else-if="sortField === 'id' && sortOrder === 'desc'"
+                  class="fas fa-caret-down"
+                ></i>
+                <i v-else class="fas fa-sort"></i>
+              </span>
+            </th>
+
+            <!-- ⭐ 来源列（可排序） -->
+            <th @click="handleSort('source')" class="sortable">
+              来源
+              <span class="sort-icon">
+                <i
+                  v-if="sortField === 'source' && sortOrder === 'asc'"
+                  class="fas fa-caret-up"
+                ></i>
+                <i
+                  v-else-if="sortField === 'source' && sortOrder === 'desc'"
+                  class="fas fa-caret-down"
+                ></i>
+                <i v-else class="fas fa-sort"></i>
+              </span>
+            </th>
+
+            <!-- ⭐ 章节列（可排序） -->
+            <th @click="handleSort('chapter')" class="sortable">
+              章节
+              <span class="sort-icon">
+                <i
+                  v-if="sortField === 'chapter' && sortOrder === 'asc'"
+                  class="fas fa-caret-up"
+                ></i>
+                <i
+                  v-else-if="sortField === 'chapter' && sortOrder === 'desc'"
+                  class="fas fa-caret-down"
+                ></i>
+                <i v-else class="fas fa-sort"></i>
+              </span>
+            </th>
+
             <th>内容预览</th>
             <th>字符数</th>
             <th>热度</th>
-            <!-- ⭐⭐⭐ 操作列（权限控制）⭐⭐⭐ -->
-            <th
-              v-if="
-                authStore.hasPermission('edit_knowledge') ||
-                authStore.hasPermission('delete_knowledge')
-              "
-            >
-              操作
-            </th>
+            <th>操作</th>
           </tr>
         </thead>
+
         <tbody>
           <tr v-for="chunk in chunks" :key="chunk.id">
             <td>{{ chunk.id }}</td>
             <td>
               <span class="source-tag">{{ chunk.source }}</span>
             </td>
-            <td>{{ chunk.chapter || "未分类" }}</td>
-            <td class="content-preview">
-              {{ chunk.content.substring(0, 50) }}...
-            </td>
-            <td>{{ chunk.char_count }}</td>
+            <td>{{ chunk.chapter || "-" }}</td>
             <td>
-              <span class="heat-badge"> ⭐ {{ chunk.retrieved_count }} </span>
+              <div class="content-preview">{{ chunk.content }}</div>
             </td>
-            <!-- ⭐⭐⭐ 操作按钮（权限控制）⭐⭐⭐ -->
-            <td
-              v-if="
-                authStore.hasPermission('edit_knowledge') ||
-                authStore.hasPermission('delete_knowledge')
-              "
-              class="actions-cell"
-            >
-              <!-- 编辑按钮 -->
+            <td>{{ chunk.char_count || 0 }}</td>
+            <td>
+              <span class="heat-badge">{{ chunk.retrieved_count || 0 }}次</span>
+            </td>
+            <td class="actions-cell">
               <button
-                v-if="authStore.hasPermission('edit_knowledge')"
                 @click="handleEdit(chunk)"
                 class="action-btn edit-btn"
                 title="编辑"
               >
                 <i class="fas fa-edit"></i>
               </button>
-              <!-- 删除按钮 -->
               <button
-                v-if="authStore.hasPermission('delete_knowledge')"
                 @click="handleDelete(chunk.id)"
                 class="action-btn delete-btn"
                 title="删除"
@@ -169,76 +188,99 @@
           </tr>
         </tbody>
       </table>
+    </div>
 
-      <!-- 分页 -->
-      <div v-if="pagination.pages > 1" class="pagination">
-        <button
-          @click="handlePageChange(pagination.page - 1)"
-          :disabled="pagination.page === 1"
-          class="page-btn"
-        >
-          上一页
-        </button>
+    <!-- 分页 -->
+    <div v-if="pagination.pages > 1" class="pagination">
+      <button
+        @click="handlePageChange(pagination.page - 1)"
+        :disabled="pagination.page === 1"
+        class="page-btn"
+      >
+        上一页
+      </button>
 
-        <span class="page-info">
-          第 {{ pagination.page }} / {{ pagination.pages }} 页 （共
-          {{ pagination.total }} 条）
-        </span>
+      <span class="page-info">
+        第 {{ pagination.page }} / {{ pagination.pages }} 页
+      </span>
 
-        <button
-          @click="handlePageChange(pagination.page + 1)"
-          :disabled="pagination.page === pagination.pages"
-          class="page-btn"
-        >
-          下一页
-        </button>
-      </div>
+      <button
+        @click="handlePageChange(pagination.page + 1)"
+        :disabled="pagination.page === pagination.pages"
+        class="page-btn"
+      >
+        下一页
+      </button>
     </div>
 
     <!-- 编辑对话框 -->
     <div v-if="showEditDialog" class="modal-overlay" @click="closeEditDialog">
       <div class="modal-content" @click.stop>
         <div class="modal-header">
-          <h3>✏️ 编辑知识块</h3>
-          <button @click="closeEditDialog" class="close-btn">
+          <h3>编辑知识块</h3>
+          <button class="close-btn" @click="closeEditDialog">
             <i class="fas fa-times"></i>
           </button>
         </div>
 
         <div class="modal-body">
           <div class="form-group">
-            <label>章节</label>
-            <input v-model="editForm.chapter" type="text" />
+            <label for="edit-chapter">章节</label>
+            <input
+              id="edit-chapter"
+              v-model="editForm.chapter"
+              type="text"
+              placeholder="如：指针的应用"
+            />
           </div>
 
           <div class="form-group">
-            <label>内容</label>
-            <textarea v-model="editForm.content" rows="10"></textarea>
+            <label for="edit-content">内容</label>
+            <textarea
+              id="edit-content"
+              v-model="editForm.content"
+              rows="8"
+              placeholder="知识块内容..."
+            ></textarea>
           </div>
 
           <div class="form-group">
-            <label>关键词（用逗号分隔）</label>
-            <input v-model="editForm.keywords" type="text" />
+            <label for="edit-keywords">关键词</label>
+            <input
+              id="edit-keywords"
+              v-model="editForm.keywords"
+              type="text"
+              placeholder="用逗号分隔，如：指针,内存,变量"
+            />
           </div>
         </div>
 
         <div class="modal-footer">
           <button @click="closeEditDialog" class="cancel-btn">取消</button>
-          <button @click="handleSaveEdit" class="save-btn" :disabled="isSaving">
+          <button @click="confirmEdit" :disabled="isSaving" class="save-btn">
             {{ isSaving ? "保存中..." : "保存" }}
           </button>
         </div>
       </div>
     </div>
+
+    <!-- 隐藏的文件上传输入框 -->
+    <input
+      ref="fileInput"
+      type="file"
+      accept=".md"
+      style="display: none"
+      @change="handleFileChange"
+    />
   </div>
 </template>
 
 <script setup>
 import { ref, onMounted, computed } from "vue";
-import { useAuthStore } from "../stores/user"; // ⭐ 导入
+import { useAuthStore } from "../stores/user";
 import { knowledgeAPI } from "../api/knowledge";
 
-const authStore = useAuthStore(); // ⭐ 获取实例
+const authStore = useAuthStore();
 
 // ========== 数据状态 ==========
 const chunks = ref([]);
@@ -259,6 +301,10 @@ const searchQuery = ref("");
 const filterSource = ref("");
 const filterChapter = ref("");
 
+// ⭐⭐⭐ 排序状态 ⭐⭐⭐
+const sortField = ref("id");
+const sortOrder = ref("asc");
+
 // 编辑
 const showEditDialog = ref(false);
 const editingChunk = ref(null);
@@ -267,6 +313,9 @@ const editForm = ref({
   content: "",
   keywords: "",
 });
+
+// 文件上传
+const fileInput = ref(null);
 
 // 来源和章节选项
 const sources = computed(() => stats.value.sources || []);
@@ -290,18 +339,21 @@ async function loadChunks() {
     const params = {
       page: pagination.value.page,
       per_page: pagination.value.per_page,
+      source: filterSource.value,
+      chapter: filterChapter.value,
+      search: searchQuery.value,
+      sort_by: sortField.value,
+      order: sortOrder.value,
     };
-
-    if (searchQuery.value) params.search = searchQuery.value;
-    if (filterSource.value) params.source = filterSource.value;
-    if (filterChapter.value) params.chapter = filterChapter.value;
 
     const response = await knowledgeAPI.getChunks(params);
 
     if (response.status === "success") {
       chunks.value = response.data.chunks;
       pagination.value = response.data.pagination;
-      console.log("✅ 加载知识块成功:", chunks.value.length);
+      console.log(`✅ 加载了 ${chunks.value.length} 个知识块`);
+    } else {
+      alert("加载失败: " + response.message);
     }
   } catch (error) {
     console.error("❌ 加载知识块失败:", error);
@@ -317,110 +369,46 @@ async function loadChunks() {
 async function loadStats() {
   try {
     const response = await knowledgeAPI.getStats();
-
     if (response.status === "success") {
       stats.value = response.data;
-      console.log("✅ 加载统计成功:", stats.value);
     }
   } catch (error) {
     console.error("❌ 加载统计失败:", error);
   }
 }
 
-// ========== 上传文件 ==========
+// ========== 排序方法 ==========
 
 /**
- * 文件选择
+ * 处理排序（点击表头）
  */
-function handleFileSelect(event) {
-  const file = event.target.files[0];
-  if (file) {
-    handleUpload(file);
+function handleSort(field) {
+  console.log(`🔄 排序: ${field}`);
+
+  if (sortField.value === field) {
+    sortOrder.value = sortOrder.value === "asc" ? "desc" : "asc";
+  } else {
+    sortField.value = field;
+    sortOrder.value = "asc";
   }
+
+  pagination.value.page = 1;
+  loadChunks();
 }
 
-/**
- * 点击上传按钮
- */
-function handleUploadClick() {
-  document.querySelector('input[type="file"]').click();
-}
-
-/**
- * 上传文件
- */
-async function handleUpload(file) {
-  // 验证文件类型
-  if (!file.name.endsWith(".md")) {
-    alert("只支持 Markdown 文件（.md）");
-    return;
-  }
-
-  // 验证文件大小（5MB）
-  if (file.size > 5 * 1024 * 1024) {
-    alert("文件过大，最大支持 5MB");
-    return;
-  }
-
-  try {
-    console.log("📤 上传文件:", file.name);
-
-    const response = await knowledgeAPI.uploadDocument(file);
-
-    if (response.status === "success") {
-      alert(
-        `上传成功！\n文件: ${response.data.file_name}\n知识块: ${response.data.chunks_count}`,
-      );
-
-      // 重新加载数据
-      loadChunks();
-      loadStats();
-    }
-  } catch (error) {
-    console.error("❌ 上传失败:", error);
-    alert("上传失败: " + error.message);
-  }
-}
-
-// ========== 删除知识块 ==========
-
-/**
- * 删除知识块
- */
-async function handleDelete(chunkId) {
-  if (!confirm("确定要删除这个知识块吗？此操作不可恢复。")) {
-    return;
-  }
-
-  try {
-    console.log("🗑️ 删除知识块:", chunkId);
-
-    const response = await knowledgeAPI.deleteChunk(chunkId);
-
-    if (response.status === "success") {
-      alert("删除成功");
-
-      // 重新加载数据
-      loadChunks();
-      loadStats();
-    }
-  } catch (error) {
-    console.error("❌ 删除失败:", error);
-    alert("删除失败: " + error.message);
-  }
-}
-
-// ========== 编辑知识块 ==========
+// ========== ⭐⭐⭐ 编辑和删除方法（恢复）⭐⭐⭐ ==========
 
 /**
  * 打开编辑对话框
  */
 function handleEdit(chunk) {
+  console.log("✏️ 编辑知识块:", chunk.id);
+
   editingChunk.value = chunk;
   editForm.value = {
     chapter: chunk.chapter || "",
     content: chunk.content || "",
-    keywords: chunk.keywords?.join(", ") || "",
+    keywords: chunk.keywords ? chunk.keywords.join(", ") : "",
   };
   showEditDialog.value = true;
 }
@@ -431,17 +419,18 @@ function handleEdit(chunk) {
 function closeEditDialog() {
   showEditDialog.value = false;
   editingChunk.value = null;
-  editForm.value = { chapter: "", content: "", keywords: "" };
+  editForm.value = {
+    chapter: "",
+    content: "",
+    keywords: "",
+  };
 }
 
 /**
- * 保存编辑
+ * 确认编辑
  */
-async function handleSaveEdit() {
-  if (!editForm.value.content.trim()) {
-    alert("内容不能为空");
-    return;
-  }
+async function confirmEdit() {
+  if (!editingChunk.value) return;
 
   try {
     isSaving.value = true;
@@ -449,10 +438,7 @@ async function handleSaveEdit() {
     const data = {
       chapter: editForm.value.chapter,
       content: editForm.value.content,
-      keywords: editForm.value.keywords
-        .split(",")
-        .map((k) => k.trim())
-        .filter((k) => k),
+      keywords: editForm.value.keywords,
     };
 
     const response = await knowledgeAPI.updateChunk(
@@ -461,30 +447,54 @@ async function handleSaveEdit() {
     );
 
     if (response.status === "success") {
-      alert("保存成功");
+      alert("修改成功！");
       closeEditDialog();
-      loadChunks();
+      loadChunks(); // 重新加载列表
+    } else {
+      alert("修改失败: " + response.message);
     }
   } catch (error) {
-    console.error("❌ 保存失败:", error);
-    alert("保存失败: " + error.message);
+    console.error("❌ 修改失败:", error);
+    alert("修改失败: " + error.message);
   } finally {
     isSaving.value = false;
   }
 }
 
-// ========== 搜索和过滤 ==========
+/**
+ * 删除知识块
+ */
+async function handleDelete(chunkId) {
+  if (!confirm("确定要删除这个知识块吗？此操作不可恢复！")) {
+    return;
+  }
+
+  try {
+    console.log("🗑️ 删除知识块:", chunkId);
+
+    const response = await knowledgeAPI.deleteChunk(chunkId);
+
+    if (response.status === "success") {
+      alert("删除成功！");
+      loadChunks(); // 重新加载列表
+      loadStats(); // 更新统计信息
+    } else {
+      alert("删除失败: " + response.message);
+    }
+  } catch (error) {
+    console.error("❌ 删除失败:", error);
+    alert("删除失败: " + error.message);
+  }
+}
+
+// ========== 其他方法 ==========
 
 /**
  * 搜索
  */
-let searchTimeout = null;
 function handleSearch() {
-  clearTimeout(searchTimeout);
-  searchTimeout = setTimeout(() => {
-    pagination.value.page = 1;
-    loadChunks();
-  }, 500);
+  pagination.value.page = 1;
+  loadChunks();
 }
 
 /**
@@ -496,9 +506,9 @@ function handleFilter() {
 }
 
 /**
- * 重置过滤
+ * 重置过滤器
  */
-function resetFilters() {
+function handleResetFilter() {
   searchQuery.value = "";
   filterSource.value = "";
   filterChapter.value = "";
@@ -506,21 +516,60 @@ function resetFilters() {
   loadChunks();
 }
 
-// ========== 分页 ==========
+/**
+ * 翻页
+ */
+function handlePageChange(newPage) {
+  if (newPage < 1 || newPage > pagination.value.pages) return;
+  pagination.value.page = newPage;
+  loadChunks();
+}
 
 /**
- * 页码变化
+ * 上传文档
  */
-function handlePageChange(page) {
-  pagination.value.page = page;
-  loadChunks();
+function handleUpload() {
+  fileInput.value.click();
+}
+
+/**
+ * 文件选择后上传
+ */
+async function handleFileChange(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+
+  if (!file.name.endsWith(".md")) {
+    alert("只支持 Markdown 文件（.md）");
+    return;
+  }
+
+  try {
+    console.log("📤 上传文件:", file.name);
+
+    const response = await knowledgeAPI.uploadDocument(file);
+
+    if (response.status === "success") {
+      alert(`上传成功！已导入 ${response.data.chunks_count} 个知识块`);
+      loadChunks();
+      loadStats();
+    } else {
+      alert("上传失败: " + response.message);
+    }
+  } catch (error) {
+    console.error("❌ 上传失败:", error);
+    alert("上传失败: " + error.message);
+  } finally {
+    // 重置文件输入框
+    event.target.value = "";
+  }
 }
 </script>
 
 <style scoped>
 /* ========== 整体布局 ========== */
 .knowledge-base {
-  padding: 16px; /* ⭐ 改为 16px（原来 24px）*/
+  padding: 16px;
   background: #f5f5f5;
   min-height: 100vh;
 }
@@ -530,16 +579,16 @@ function handlePageChange(page) {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 12px; /* ⭐ 改为 12px（原来 24px）*/
+  margin-bottom: 12px;
   background: white;
-  padding: 16px; /* ⭐ 改为 16px（原来 20px）*/
+  padding: 16px;
   border-radius: 12px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
 }
 
 .header h1 {
   margin: 0;
-  font-size: 22px; /* ⭐ 改为 22px（原来 24px）*/
+  font-size: 22px;
   color: #333;
 }
 
@@ -585,26 +634,23 @@ function handlePageChange(page) {
 /* ========== 统计卡片 ========== */
 .stats-section {
   display: grid;
-  grid-template-columns: repeat(
-    auto-fit,
-    minmax(180px, 1fr)
-  ); /* ⭐ 改为 180px */
-  gap: 8px; /* ⭐ 改为 8px（原来 12px）*/
-  margin-bottom: 12px; /* ⭐ 改为 12px（原来 20px）*/
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 8px;
+  margin-bottom: 12px;
 }
 
 .stat-card {
   background: white;
-  padding: 12px; /* ⭐ 改为 12px（原来 16px）*/
-  border-radius: 8px; /* ⭐ 改为 8px（原来 10px）*/
+  padding: 12px;
+  border-radius: 8px;
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
   display: flex;
   align-items: center;
-  gap: 10px; /* ⭐ 改为 10px（原来 12px）*/
+  gap: 10px;
 }
 
 .stat-icon {
-  font-size: 32px; /* ⭐ 改为 32px（原来 36px）*/
+  font-size: 32px;
 }
 
 .stat-content {
@@ -612,13 +658,13 @@ function handlePageChange(page) {
 }
 
 .stat-value {
-  font-size: 22px; /* ⭐ 改为 22px（原来 24px）*/
+  font-size: 22px;
   font-weight: 600;
   color: #333;
 }
 
 .stat-label {
-  font-size: 12px; /* ⭐ 改为 12px（原来 13px）*/
+  font-size: 12px;
   color: #666;
   margin-top: 2px;
 }
@@ -627,9 +673,9 @@ function handlePageChange(page) {
 .filters {
   display: flex;
   gap: 12px;
-  margin-bottom: 8px; /* ⭐ 改为 8px（原来 16px）*/
+  margin-bottom: 8px;
   background: white;
-  padding: 12px; /* ⭐ 改为 12px（原来 16px）*/
+  padding: 12px;
   border-radius: 12px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
 }
@@ -656,10 +702,10 @@ function handlePageChange(page) {
   background: #e0e0e0;
 }
 
-/* ========== 知识块列表（修复表头割裂感）========== */
+/* ========== 知识块列表 ========== */
 .chunks-section {
   background: white;
-  padding: 0; /* ⭐⭐⭐ 改为 0（原来 20px）⭐⭐⭐ */
+  padding: 0;
   border-radius: 12px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
   max-height: 600px;
@@ -673,45 +719,42 @@ function handlePageChange(page) {
   table-layout: fixed;
 }
 
-/* ⭐⭐⭐ 修复：表头样式优化 ⭐⭐⭐ */
 .chunks-table thead {
   position: sticky;
   top: 0;
-  background: #fafafa; /* ⭐ 改为浅灰色（原来 white）*/
+  background: #fafafa;
   z-index: 10;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05); /* ⭐ 阴影减小 */
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
 }
 
 .chunks-table th {
-  background: #fafafa; /* ⭐ 改为浅灰色 */
-  padding: 10px 12px; /* ⭐ 改为 10px 12px（原来 12px）*/
+  background: #fafafa;
+  padding: 10px 12px;
   text-align: left;
   font-weight: 600;
-  font-size: 13px; /* ⭐ 改为 13px（原来 14px）*/
+  font-size: 13px;
   color: #666;
-  border-bottom: 1px solid #e0e0e0; /* ⭐ 改为 1px（原来 2px）*/
+  border-bottom: 1px solid #e0e0e0;
 }
 
-/* ⭐⭐⭐ 新增：第一个/最后一个表头圆角 ⭐⭐⭐ */
 .chunks-table th:first-child {
-  padding-left: 16px; /* ⭐ 左边距增加 */
+  padding-left: 16px;
   border-top-left-radius: 12px;
 }
 
 .chunks-table th:last-child {
-  padding-right: 16px; /* ⭐ 右边距增加 */
+  padding-right: 16px;
   border-top-right-radius: 12px;
 }
 
 .chunks-table td {
-  padding: 10px 12px; /* ⭐ 改为 10px 12px（原来 12px）*/
-  border-bottom: 1px solid #f5f5f5; /* ⭐ 改为浅色边框 */
+  padding: 10px 12px;
+  border-bottom: 1px solid #f5f5f5;
   overflow: hidden;
   text-overflow: ellipsis;
-  font-size: 14px; /* ⭐ 新增：统一字体大小 */
+  font-size: 14px;
 }
 
-/* ⭐⭐⭐ 新增：第一个/最后一个单元格边距 ⭐⭐⭐ */
 .chunks-table td:first-child {
   padding-left: 16px;
 }
@@ -720,19 +763,47 @@ function handlePageChange(page) {
   padding-right: 16px;
 }
 
-/* ⭐⭐⭐ 新增：鼠标悬停行高亮 ⭐⭐⭐ */
 .chunks-table tbody tr:hover {
   background: #f9fafb;
+}
+
+/* 可排序的表头 */
+.sortable {
+  cursor: pointer;
+  user-select: none;
+  position: relative;
+  transition: background 0.2s;
+}
+
+.sortable:hover {
+  background: #e8e8e8;
+}
+
+.sort-icon {
+  margin-left: 6px;
+  font-size: 12px;
+  color: #999;
+  transition: color 0.2s;
+}
+
+.sortable:hover .sort-icon {
+  color: #667eea;
+}
+
+.sortable .sort-icon i.fa-caret-up,
+.sortable .sort-icon i.fa-caret-down {
+  color: #667eea;
+  font-weight: bold;
 }
 
 /* 来源标签 */
 .source-tag {
   display: inline-block;
-  padding: 4px 10px; /* ⭐ 改为 4px 10px（原来 6px 12px）*/
+  padding: 4px 10px;
   background: #e3f2fd;
   color: #1976d2;
   border-radius: 4px;
-  font-size: 12px; /* ⭐ 改为 12px（原来 13px）*/
+  font-size: 12px;
   font-weight: 500;
 }
 
@@ -743,32 +814,32 @@ function handlePageChange(page) {
   overflow: hidden;
   text-overflow: ellipsis;
   color: #555;
-  font-size: 13px; /* ⭐ 改为 13px */
+  font-size: 13px;
 }
 
 /* 热度徽章 */
 .heat-badge {
   display: inline-block;
-  padding: 4px 10px; /* ⭐ 改为 4px 10px */
+  padding: 4px 10px;
   background: #fff3e0;
   color: #f57c00;
   border-radius: 4px;
-  font-size: 12px; /* ⭐ 改为 12px */
+  font-size: 12px;
   font-weight: 500;
 }
 
 /* 操作按钮 */
 .actions-cell {
   display: flex;
-  gap: 6px; /* ⭐ 改为 6px（原来 8px）*/
+  gap: 6px;
 }
 
 .action-btn {
-  padding: 5px 8px; /* ⭐ 改为 5px 8px（原来 6px 10px）*/
+  padding: 5px 8px;
   border: none;
   border-radius: 4px;
   cursor: pointer;
-  font-size: 13px; /* ⭐ 改为 13px（原来 14px）*/
+  font-size: 13px;
   transition: all 0.2s;
 }
 
@@ -790,9 +861,9 @@ function handlePageChange(page) {
   background: #ffcdd2;
 }
 
-/* ========== 滚动条样式美化 ========== */
+/* 滚动条样式美化 */
 .chunks-section::-webkit-scrollbar {
-  width: 6px; /* ⭐ 改为 6px（原来 8px）*/
+  width: 6px;
 }
 
 .chunks-section::-webkit-scrollbar-track {
@@ -801,7 +872,7 @@ function handlePageChange(page) {
 }
 
 .chunks-section::-webkit-scrollbar-thumb {
-  background: #d0d0d0; /* ⭐ 改为浅色 */
+  background: #d0d0d0;
   border-radius: 3px;
   transition: background 0.2s;
 }
@@ -810,7 +881,7 @@ function handlePageChange(page) {
   background: #aaa;
 }
 
-/* ========== 加载/空状态 ========== */
+/* 加载/空状态 */
 .loading,
 .empty-state {
   text-align: center;
@@ -832,7 +903,7 @@ function handlePageChange(page) {
   opacity: 0.5;
 }
 
-/* ========== 编辑对话框（保持不变）========== */
+/* 编辑对话框 */
 .modal-overlay {
   position: fixed;
   top: 0;
@@ -929,7 +1000,7 @@ function handlePageChange(page) {
   background: #ccc;
 }
 
-/* ========== 分页组件（保持不变）========== */
+/* 分页组件 */
 .pagination {
   display: flex;
   justify-content: center;

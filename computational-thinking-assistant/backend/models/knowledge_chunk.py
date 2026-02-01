@@ -465,3 +465,28 @@ class KnowledgeChunk(db.Model):
 # ========== 导入到 models/__init__.py ==========
 # 在 models/__init__.py 中添加：
 # from models.knowledge_chunk import KnowledgeChunk
+
+@classmethod
+def batch_increment_retrieved(cls, chunk_ids: List[int]):
+    """
+    批量增加检索计数（性能优化）
+    
+    Args:
+        chunk_ids: 知识块 ID 列表
+    """
+    try:
+        from sqlalchemy import update
+        
+        stmt = update(cls).where(cls.id.in_(chunk_ids)).values(
+            retrieved_count=cls.retrieved_count + 1,
+            last_retrieved_at=datetime.utcnow()
+        )
+        
+        db.session.execute(stmt)
+        db.session.commit()
+        
+        print(f"📈 批量更新热度: {len(chunk_ids)} 个知识块")
+        
+    except Exception as e:
+        print(f"❌ 批量更新热度失败: {e}")
+        db.session.rollback()
