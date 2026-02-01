@@ -18,6 +18,7 @@ import jieba  # ⭐ 添加 jieba 导入
 import argparse
 from pathlib import Path
 from datetime import datetime
+import traceback
 
 # 添加项目根目录到 Python 路径
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
@@ -575,3 +576,97 @@ if __name__ == '__main__':
     # 执行导入
     import_knowledge()
 
+# ⭐⭐⭐ 在文件末尾添加可导入的函数 ⭐⭐⭐
+
+def import_single_file(file_path: Path) -> dict:
+    """
+    导入单个 Markdown 文件到知识库
+    
+    Args:
+        file_path: 文件路径
+        
+    Returns:
+        dict: {
+            'success': bool,
+            'message': str,
+            'chunks_count': int,
+            'file_name': str
+        }
+    """
+    try:
+        print(f"\n{'='*60}")
+        print(f"📂 导入单个文件: {file_path.name}")
+        print(f"{'='*60}")
+        
+        # 1. 检查文件是否存在
+        if not file_path.exists():
+            return {
+                'success': False,
+                'message': f'文件不存在: {file_path}',
+                'chunks_count': 0,
+                'file_name': file_path.name
+            }
+        
+        # 2. 读取文件内容
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                content = f.read()
+        except Exception as e:
+            return {
+                'success': False,
+                'message': f'读取文件失败: {str(e)}',
+                'chunks_count': 0,
+                'file_name': file_path.name
+            }
+        
+        # 3. 分块
+        chunks = split_by_headers(content, file_path.name, max_length=1000)
+        
+        if not chunks:
+            return {
+                'success': False,
+                'message': '文件内容为空或无法分块',
+                'chunks_count': 0,
+                'file_name': file_path.name
+            }
+        
+        print(f"✅ 分块完成: {len(chunks)} 个知识块")
+        
+        # 4. 导入到向量数据库
+        vector_result = import_to_vector_db(chunks)
+        
+        if not vector_result['success']:
+            return {
+                'success': False,
+                'message': f"向量化失败: {vector_result['message']}",
+                'chunks_count': 0,
+                'file_name': file_path.name
+            }
+        
+        # 5. 同步到数据库
+        inserted_count = sync_to_database(chunks)
+        
+        print(f"✅ 导入成功: {file_path.name}")
+        print(f"   知识块数: {len(chunks)}")
+        print(f"   向量数: {vector_result['count']}")
+        print(f"   数据库记录: {inserted_count}")
+        print(f"{'='*60}\n")
+        
+        return {
+            'success': True,
+            'message': '导入成功',
+            'chunks_count': len(chunks),
+            'vector_count': vector_result['count'],
+            'db_count': inserted_count,
+            'file_name': file_path.name
+        }
+        
+    except Exception as e:
+        print(f"❌ 导入失败: {e}")
+        traceback.print_exc()
+        return {
+            'success': False,
+            'message': f'导入失败: {str(e)}',
+            'chunks_count': 0,
+            'file_name': file_path.name if file_path else 'unknown'
+        }

@@ -33,6 +33,9 @@ export const useAuthStore = defineStore("user", () => {
 
         localStorage.setItem("token", response.token);
 
+        // ⭐⭐⭐ 新增：保存用户信息到 localStorage（包含角色）⭐⭐⭐
+        localStorage.setItem("user", JSON.stringify(response.user));
+
         if (remember) {
           localStorage.setItem("username", username);
           localStorage.setItem("rememberMe", "true");
@@ -92,6 +95,7 @@ export const useAuthStore = defineStore("user", () => {
    */
   async function autoLogin() {
     const savedToken = localStorage.getItem("token");
+    const savedUser = localStorage.getItem("user"); // ⭐ 新增
 
     if (!savedToken) {
       console.log("⚠️ 没有保存的 Token，跳过自动登录");
@@ -102,6 +106,27 @@ export const useAuthStore = defineStore("user", () => {
       isLoading.value = true;
       console.log("🔄 尝试自动登录...");
 
+      // ⭐⭐⭐ 优化：优先使用本地缓存的用户信息 ⭐⭐⭐
+      if (savedUser) {
+        try {
+          user.value = JSON.parse(savedUser);
+          isLoggedIn.value = true;
+          token.value = savedToken;
+          console.log("✅ 使用缓存用户信息:", user.value.username);
+          console.log("   角色:", user.value.role_display);
+
+          // 加载会话列表
+          const chatStore = useChatStore();
+          await chatStore.loadSessions();
+
+          return true;
+        } catch (e) {
+          console.warn("⚠️ 解析缓存用户信息失败，尝试验证 Token");
+        }
+      }
+
+      // 如果没有缓存或解析失败，验证 Token
+
       const response = await authAPI.verifyToken(savedToken);
 
       if (response.status === "success") {
@@ -110,6 +135,7 @@ export const useAuthStore = defineStore("user", () => {
         user.value = {
           id: response.user_id,
           username: response.username,
+          role: response.role || "student", // ⭐ 确保有角色信息
         };
 
         const savedRememberMe = localStorage.getItem("rememberMe");
@@ -189,6 +215,83 @@ export const useAuthStore = defineStore("user", () => {
     }
   }
 
+  // ========== ⭐⭐⭐ 权限检查方法（完善版）⭐⭐⭐ ==========
+
+  /**
+   * 检查用户是否有指定权限
+   *
+   * @param {string} action - 权限名称
+   * @returns {boolean}
+   */
+  function hasPermission(action) {
+    // 如果用户信息中包含权限列表，直接检查
+    if (user.value?.permissions && Array.isArray(user.value.permissions)) {
+      return user.value.permissions.includes(action);
+    }
+
+    // 否则根据角色判断（后备方案）
+    const permissionMap = {
+      // 基础功能（所有角色）
+      ask: ["student", "teacher", "admin"],
+      view_knowledge: ["student", "teacher", "admin"],
+      view_sessions: ["student", "teacher", "admin"],
+      create_session: ["student", "teacher", "admin"],
+
+      // 知识库管理（教师、管理员）
+      upload_doc: ["teacher", "admin"],
+      manage_knowledge: ["teacher", "admin"],
+      delete_knowledge: ["teacher", "admin"],
+      edit_knowledge: ["teacher", "admin"],
+      view_knowledge_stats: ["teacher", "admin"],
+
+      // 用户管理（仅管理员）
+      manage_users: ["admin"],
+      view_all_sessions: ["admin"],
+      delete_user: ["admin"],
+      change_user_role: ["admin"],
+      view_system_stats: ["admin"],
+    };
+
+    const allowedRoles = permissionMap[action] || [];
+    return allowedRoles.includes(user.value?.role);
+  }
+
+  /**
+   * 检查用户是否有指定角色
+   */
+  function hasRole(role) {
+    return user.value?.role === role;
+  }
+
+  /**
+   * 检查用户是否有任意一个角色
+   */
+  function hasAnyRole(roles) {
+    if (!user.value?.role) return false;
+    return roles.includes(user.value.role);
+  }
+
+  /**
+   * 检查是否是教师
+   */
+  function isTeacher() {
+    return user.value?.role === "teacher";
+  }
+
+  /**
+   * 检查是否是管理员
+   */
+  function isAdmin() {
+    return user.value?.role === "admin";
+  }
+
+  /**
+   * 检查是否是学生
+   */
+  function isStudent() {
+    return user.value?.role === "student";
+  }
+
   // ========== 导出 ==========
   return {
     // 状态
@@ -204,5 +307,13 @@ export const useAuthStore = defineStore("user", () => {
     logout,
     fetchUserProfile,
     updateUser,
+
+    // ⭐ 新增：权限检查方法
+    hasPermission,
+    hasRole,
+    hasAnyRole,
+    isTeacher,
+    isAdmin,
+    isStudent,
   };
 });

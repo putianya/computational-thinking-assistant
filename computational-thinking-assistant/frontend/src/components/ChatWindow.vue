@@ -1,7 +1,40 @@
 <template>
   <div class="chat-window">
-    <!-- 左侧：会话列表 -->
+    <!-- 左侧：侧边栏 -->
     <div class="sidebar">
+      <!-- ⭐⭐⭐ 新增：顶部导航菜单 ⭐⭐⭐ -->
+      <div class="sidebar-nav">
+        <!-- 对话菜单（所有用户可见）-->
+        <router-link to="/" class="nav-item" active-class="active">
+          <i class="fas fa-comments"></i>
+          <span>对话</span>
+        </router-link>
+
+        <!-- ⭐⭐⭐ 知识库管理（权限控制）⭐⭐⭐ -->
+        <router-link
+          v-if="authStore.hasPermission('manage_knowledge')"
+          to="/knowledge"
+          class="nav-item"
+          active-class="active"
+        >
+          <i class="fas fa-book"></i>
+          <span>知识库管理</span>
+        </router-link>
+
+        <!-- ⭐⭐⭐ 用户管理（仅管理员可见）⭐⭐⭐ -->
+        <router-link
+          v-if="authStore.hasPermission('manage_users')"
+          to="/admin/users"
+          z``
+          class="nav-item"
+          active-class="active"
+        >
+          <i class="fas fa-users"></i>
+          <span>用户管理</span>
+        </router-link>
+      </div>
+
+      <!-- 会话列表 -->
       <SessionList />
     </div>
 
@@ -77,11 +110,13 @@
 <script setup>
 import { ref, computed, watch, nextTick, onMounted } from "vue";
 import { useChatStore } from "../stores/chat";
+import { useAuthStore } from "../stores/user"; // ⭐ 新增：导入用户 Store
 import SessionList from "./SessionList.vue";
 import ChatMessage from "./ChatMessage.vue";
 import ChatInput from "./ChatInput.vue";
 
 const chatStore = useChatStore();
+const authStore = useAuthStore(); // ⭐ 新增：获取用户 Store 实例
 const messagesContainer = ref(null);
 
 // ❌ 删除：上下文使用百分比计算
@@ -190,13 +225,63 @@ async function handleClearContext() {
   background: #f0f2f5;
 }
 
-/* ========== 左侧：会话列表 ========== */
+/* ========== 左侧：侧边栏 ========== */
 .sidebar {
   width: 280px;
   background: white;
   border-right: 1px solid #e0e0e0;
   flex-shrink: 0;
   overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ========== ⭐⭐⭐ 新增：顶部导航菜单样式 ⭐⭐⭐ ========== */
+.sidebar-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 16px;
+  border-bottom: 1px solid #e0e0e0;
+  background: white;
+  flex-shrink: 0; /* ⭐ 防止被压缩 */
+}
+
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  border-radius: 8px;
+  text-decoration: none;
+  color: #666;
+  font-size: 14px;
+  font-weight: 500;
+  transition: all 0.2s;
+  cursor: pointer;
+}
+
+.nav-item:hover {
+  background: #f0f4ff;
+  color: #667eea;
+}
+
+.nav-item.active {
+  background: linear-gradient(135deg, #667eea10 0%, #764ba210 100%);
+  color: #667eea;
+  font-weight: 600;
+  border-left: 3px solid #667eea;
+  padding-left: 13px; /* ⭐ 调整左边距，保持对齐 */
+}
+
+.nav-item i {
+  font-size: 18px;
+  width: 20px;
+  text-align: center;
+}
+
+.nav-item span {
+  flex: 1;
 }
 
 /* ========== 右侧：聊天区域 ========== */
@@ -369,29 +454,25 @@ async function handleClearContext() {
 
   .sidebar {
     width: 100%;
-    height: 200px;
+    height: auto;
     border-right: none;
     border-bottom: 1px solid #e0e0e0;
+  }
+
+  .sidebar-nav {
+    flex-direction: row;
+    padding: 12px;
+    overflow-x: auto;
+  }
+
+  .nav-item {
+    flex-shrink: 0;
+    min-width: 120px;
   }
 
   .chat-section {
     margin: 0;
     border-radius: 0;
-  }
-
-  .chat-header {
-    flex-direction: column;
-    gap: 12px;
-  }
-
-  .context-info {
-    width: 100%;
-    justify-content: space-between;
-  }
-
-  .context-bar {
-    flex: 1;
-    max-width: 120px;
   }
 }
 </style>

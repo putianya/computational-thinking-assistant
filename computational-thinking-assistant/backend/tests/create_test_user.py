@@ -23,6 +23,7 @@ def create_test_users():
         
         # ========== 定义要创建的用户 ==========
         test_users = [
+            # 学生账号
             {
                 'username': 'student1',
                 'password': '123456',
@@ -31,18 +32,43 @@ def create_test_users():
                 'email': 'student1@example.com'
             },
             {
+                'username': 'student2',
+                'password': '123456',
+                'role': 'student',
+                'nickname': '李四',
+                'email': 'student2@example.com'
+            },
+            
+            # 教师账号
+            {
                 'username': 'teacher1',
                 'password': '123456',
                 'role': 'teacher',
-                'nickname': '李老师',
+                'nickname': '王老师',
                 'email': 'teacher1@example.com'
             },
+            {
+                'username': 'teacher2',
+                'password': '123456',
+                'role': 'teacher',
+                'nickname': '刘老师',
+                'email': 'teacher2@example.com'
+            },
+            
+            # 管理员账号
             {
                 'username': 'admin',
                 'password': 'admin123',
                 'role': 'admin',
                 'nickname': '系统管理员',
                 'email': 'admin@example.com'
+            },
+            {
+                'username': 'admin2',
+                'password': 'admin123',
+                'role': 'admin',
+                'nickname': '超级管理员',
+                'email': 'admin2@example.com'
             }
         ]
         
@@ -93,28 +119,64 @@ def create_test_users():
         print(f"⚠️  已存在跳过: {skipped_count} 个")
         print(f"📝 总计: {created_count + skipped_count} 个")
         
-        if created_count > 0:
+        if created_count > 0 or skipped_count > 0:
             print("\n" + "=" * 60)
             print("🔑 测试账号列表")
             print("=" * 60)
             
-            # 查询并显示所有测试用户
-            for user_data in test_users:
-                user = User.query.filter_by(username=user_data['username']).first()
-                if user:
-                    print(f"\n【{user.get_role_display()}】")
-                    print(f"   用户名: {user.username}")
-                    print(f"   密码:   {user_data['password']}")
+            # 按角色分组显示
+            roles = {
+                'student': '学生',
+                'teacher': '教师',
+                'admin': '管理员'
+            }
+            
+            for role_key, role_display in roles.items():
+                print(f"\n【{role_display}账号】")
+                print("-" * 60)
+                
+                # 查询该角色的所有用户
+                users = User.query.filter_by(role=role_key).all()
+                
+                if not users:
+                    print("   暂无用户")
+                    continue
+                
+                for user in users:
+                    # 从 test_users 中找到原始密码
+                    user_data = next(
+                        (u for u in test_users if u['username'] == user.username), 
+                        None
+                    )
+                    password = user_data['password'] if user_data else '******'
+                    
+                    print(f"\n   用户名: {user.username}")
+                    print(f"   密码:   {password}")
                     print(f"   邮箱:   {user.email}")
                     print(f"   昵称:   {user.nickname}")
-                    print(f"   权限:   {', '.join(user.get_all_permissions()[:5])}...")
+                    
+                    # 显示前5个权限
+                    permissions = user.get_all_permissions()
+                    if len(permissions) > 5:
+                        perm_display = ', '.join(permissions[:5]) + '...'
+                    else:
+                        perm_display = ', '.join(permissions)
+                    print(f"   权限:   {perm_display}")
             
             print("\n" + "=" * 60)
             print("🎯 快速登录提示")
             print("=" * 60)
-            print("学生账号: student1 / 123456")
-            print("教师账号: teacher1 / 123456")
-            print("管理员:   admin    / admin123")
+            print("\n学生账号:")
+            print("  student1 / 123456  (张三)")
+            print("  student2 / 123456  (李四)")
+            
+            print("\n教师账号:")
+            print("  teacher1 / 123456  (王老师)")
+            print("  teacher2 / 123456  (刘老师)")
+            
+            print("\n管理员账号:")
+            print("  admin    / admin123  (系统管理员)")
+            print("  admin2   / admin123  (超级管理员)")
             print("=" * 60)
         
         # ========== 显示权限矩阵（可选） ==========
@@ -130,9 +192,17 @@ def create_test_users():
             
             # 按类别分组显示
             categories = {
-                '基础功能': ['ask', 'view_knowledge', 'view_sessions', 'create_session'],
-                '知识库管理': ['upload_doc', 'manage_knowledge', 'delete_knowledge', 'edit_knowledge', 'view_knowledge_stats'],
-                '系统管理': ['manage_users', 'view_all_sessions', 'delete_user', 'change_user_role', 'view_system_stats']
+                '基础功能': [
+                    'ask', 'view_knowledge', 'view_sessions', 'create_session'
+                ],
+                '知识库管理': [
+                    'upload_doc', 'manage_knowledge', 'delete_knowledge', 
+                    'edit_knowledge', 'view_knowledge_stats'
+                ],
+                '系统管理': [
+                    'manage_users', 'view_all_sessions', 'delete_user', 
+                    'change_user_role', 'view_system_stats'
+                ]
             }
             
             for category, actions in categories.items():
@@ -145,6 +215,10 @@ def create_test_users():
                         admin_mark = '✓' if info['admin'] else '✗'
                         print(f"  {info['name']:<28} {student_mark:<10} {teacher_mark:<10} {admin_mark:<10}")
             
+            print("\n" + "=" * 80)
+            print("\n💡 权限说明:")
+            print("   ✓ = 有权限")
+            print("   ✗ = 无权限")
             print("=" * 80)
 
 
