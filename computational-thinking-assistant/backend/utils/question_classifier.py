@@ -101,6 +101,20 @@ class QuestionClassifier:
     
     # ========== 编程领域关键词 ==========
     PROGRAMMING_KEYWORDS = [
+        # 语言名称
+        'c语言', 'C语言', 'c', 'C',  # ⭐ 新增单个字母 'c'
+        'c++', 'C++', 'cpp', 'CPP',
+        'python', 'Python', 'java', 'Java',
+        'javascript', 'JavaScript', 'js', 'JS',
+        
+        # C语言核心概念
+        'main', 'printf', 'scanf', 'include', 'stdio',
+        'stdlib', 'string.h', 'math.h',
+        
+        # 数据类型
+        'int', 'char', 'float', 'double', 'void',
+        'short', 'long', 'unsigned', 'signed',
+
         '指针', 'pointer', '数组', 'array', '函数', 'function',
         '变量', 'variable', '循环', 'loop', 'for', 'while',
         '条件', 'if', 'else', 'switch', '结构体', 'struct',
@@ -151,11 +165,30 @@ class QuestionClassifier:
     
     @staticmethod
     def _contains_programming_topic(question: str) -> bool:
-        """检查问题是否包含编程相关主题"""
+        """检查问题是否包含编程相关主题（宽松匹配）"""
         question_lower = question.lower()
+        
+        # 1. 关键词匹配
         for keyword in QuestionClassifier.PROGRAMMING_KEYWORDS:
             if keyword.lower() in question_lower:
+                print(f"🔍 匹配到编程关键词: '{keyword}'")
                 return True
+        
+        # 2. 模式匹配
+        patterns = [
+            r'什么是\s*\w*语言',   # "什么是C语言"
+            r'\w*语言.*什么',       # "C语言是什么"
+            r'如何.*编程',          # "如何编程"
+            r'怎么.*写.*代码',      # "怎么写代码"
+            r'程序.*怎么',          # "程序怎么写"
+            r'语言.*特点',          # "C语言的特点"
+        ]
+        
+        for pattern in patterns:
+            if re.search(pattern, question_lower):
+                print(f"🔍 匹配到编程模式: {pattern}")
+                return True
+        
         return False
     
     @staticmethod
@@ -231,21 +264,35 @@ class QuestionClassifier:
             )
         
         # ========== 第二步：检测是否包含编程主题 ==========
+        # ========== 第二步：检测编程主题 ==========
         has_programming_topic = QuestionClassifier._contains_programming_topic(question)
         
         if not has_programming_topic:
-            print(f"   ℹ️  未检测到编程相关主题")
-            
-            if question_length < 15:
+            # ⭐⭐⭐ 修复：即使没有明确的编程关键词，也可能需要 RAG ⭐⭐⭐
+            # 检查是否包含"什么是"、"概念"等提示词
+            if any(kw in question.lower() for kw in ['什么是', '什么', '概念', '定义', '解释']):
+                print("🔍 检测到提问模式，尝试 RAG 检索")
+                
                 return ClassificationResult(
-                    question_type='general',
-                    confidence=0.6,
-                    keywords=[],
-                    retrieval_params=QuestionClassifier.RETRIEVAL_CONFIGS['general'],
-                    needs_rag=False,
-                    threshold=None,
-                    skip_reason='短问题且无编程主题'
+                    question_type='concept',
+                    confidence=0.7,
+                    keywords=['未知概念'],
+                    retrieval_params=QuestionClassifier.RETRIEVAL_CONFIGS['concept'],
+                    needs_rag=True,  # ⭐ 允许 RAG
+                    threshold=0.65,
+                    skip_reason=''
                 )
+            
+            # 其他情况才跳过 RAG
+            return ClassificationResult(
+                question_type='general',
+                confidence=0.9,
+                keywords=[],
+                retrieval_params=QuestionClassifier.RETRIEVAL_CONFIGS['general'],
+                needs_rag=False,
+                threshold=1.0,
+                skip_reason='非编程相关问题'
+            )
         
         # ========== 第三步：细分类 ==========
         results = {}

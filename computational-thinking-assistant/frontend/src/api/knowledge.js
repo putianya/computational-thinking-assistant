@@ -8,28 +8,36 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "/api";
 function getAuthHeaders() {
   const token = localStorage.getItem("token");
   return {
+    "Content-Type": "application/json",
     Authorization: `Bearer ${token}`,
   };
 }
 
 export const knowledgeAPI = {
   /**
-   * 获取知识块列表
+   * 获取文档列表
    */
-  async getChunks(params = {}) {
-    const { page = 1, per_page = 20, source, chapter, search } = params;
-
-    const queryParams = new URLSearchParams({
-      page: page.toString(),
-      per_page: per_page.toString(),
+  async getDocuments() {
+    const response = await fetch(`${API_BASE_URL}/knowledge/documents`, {
+      method: "GET",
+      headers: getAuthHeaders(),
     });
 
-    if (source) queryParams.append("source", source);
-    if (chapter) queryParams.append("chapter", chapter);
-    if (search) queryParams.append("search", search);
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+
+    return response.json();
+  },
+
+  /**
+   * ⭐⭐⭐ 获取指定文档的知识块（包含引用统计）⭐⭐⭐
+   */
+  async getDocumentChunks(filename) {
+    console.log(`📡 API 请求: /knowledge/documents/${filename}`);
 
     const response = await fetch(
-      `${API_BASE_URL}/knowledge/chunks?${queryParams}`,
+      `${API_BASE_URL}/knowledge/documents/${encodeURIComponent(filename)}`,
       {
         method: "GET",
         headers: getAuthHeaders(),
@@ -40,7 +48,27 @@ export const knowledgeAPI = {
       throw new Error(`HTTP ${response.status}`);
     }
 
-    return response.json();
+    const result = await response.json();
+
+    // ⭐⭐⭐ 调试：打印返回数据 ⭐⭐⭐
+    console.log("📦 API 返回:", result);
+
+    if (result.data && result.data.chunks) {
+      console.log(`✅ 成功获取 ${result.data.chunks.length} 个知识块`);
+
+      // 打印每个知识块的引用数据
+      result.data.chunks.forEach((chunk, index) => {
+        console.log(`   知识块 ${index + 1}:`, {
+          id: chunk.id,
+          chapter: chunk.chapter,
+          content_length: chunk.content?.length || 0,
+          retrieved_count: chunk.retrieved_count,
+          last_retrieved_at: chunk.last_retrieved_at,
+        });
+      });
+    }
+
+    return result;
   },
 
   /**
@@ -50,9 +78,14 @@ export const knowledgeAPI = {
     const formData = new FormData();
     formData.append("file", file);
 
+    const token = localStorage.getItem("token");
+
     const response = await fetch(`${API_BASE_URL}/knowledge/upload`, {
       method: "POST",
-      headers: getAuthHeaders(),
+      headers: {
+        Authorization: `Bearer ${token}`,
+        // ⚠️ 注意：不要设置 Content-Type，让浏览器自动设置
+      },
       body: formData,
     });
 
@@ -65,11 +98,11 @@ export const knowledgeAPI = {
   },
 
   /**
-   * 删除知识块
+   * 删除文档
    */
-  async deleteChunk(chunkId) {
+  async deleteDocument(filename) {
     const response = await fetch(
-      `${API_BASE_URL}/knowledge/chunks/${chunkId}`,
+      `${API_BASE_URL}/knowledge/documents/${encodeURIComponent(filename)}`,
       {
         method: "DELETE",
         headers: getAuthHeaders(),
@@ -79,30 +112,6 @@ export const knowledgeAPI = {
     if (!response.ok) {
       const error = await response.json();
       throw new Error(error.message || "删除失败");
-    }
-
-    return response.json();
-  },
-
-  /**
-   * 编辑知识块
-   */
-  async updateChunk(chunkId, data) {
-    const response = await fetch(
-      `${API_BASE_URL}/knowledge/chunks/${chunkId}`,
-      {
-        method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-          ...getAuthHeaders(),
-        },
-        body: JSON.stringify(data),
-      },
-    );
-
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.message || "更新失败");
     }
 
     return response.json();

@@ -13,11 +13,14 @@
 """
 import os
 import chromadb
+import torch
 from chromadb.config import Settings
 from sentence_transformers import SentenceTransformer
 from typing import List, Dict, Optional, Tuple
 from config import Config
+from datetime import datetime
 import logging
+import time
 
 # 配置日志
 logging.basicConfig(level=logging.INFO)
@@ -52,19 +55,10 @@ class VectorService:
         return cls._instance
     
     def __init__(self):
-        """
-        初始化向量服务
-        
-        步骤:
-            1. 加载 Embedding 模型（首次会自动下载）
-            2. 连接 ChromaDB（持久化存储）
-            3. 获取或创建集合
-            4. 打印初始化信息
-        """
-        # 如果已经初始化，跳过
+        """初始化向量服务"""
         if self._initialized:
             return
-        
+    
         logger.info("=" * 60)
         logger.info("🚀 初始化向量服务...")
         logger.info("=" * 60)
@@ -73,14 +67,38 @@ class VectorService:
             # ========== 步骤 1：加载 Embedding 模型 ==========
             logger.info(f"📦 加载 Embedding 模型: {Config.EMBEDDING_MODEL}")
             
-            self.model = SentenceTransformer(Config.EMBEDDING_MODEL)
+            device = 'cpu'
             
-            # 获取模型向量维度
+            # ⭐⭐⭐ 修复：移除 trust_remote_code，使用标准加载方式 ⭐⭐⭐
+            try:
+                # 尝试直接加载（不使用 trust_remote_code）
+                self.model = SentenceTransformer(
+                    Config.EMBEDDING_MODEL,
+                    device=device
+                )
+                logger.info("✅ 使用标准方式加载模型成功")
+            except Exception as e:
+                logger.warning(f"⚠️ 标准加载失败，尝试本地缓存: {e}")
+                # 如果标准方式失败，尝试指定缓存目录
+                cache_folder = os.path.join(os.path.dirname(__file__), '..', 'data', 'models')
+                os.makedirs(cache_folder, exist_ok=True)
+                
+                self.model = SentenceTransformer(
+                    Config.EMBEDDING_MODEL,
+                    device=device,
+                    cache_folder=cache_folder
+                )
+                logger.info("✅ 使用缓存目录加载模型成功")
+            
+            # ⭐ 确保模型在正确的设备上
+            self.model = self.model.to(device)
+            self.model.eval()
+            
             self.embedding_dim = self.model.get_sentence_embedding_dimension()
             
             logger.info(f"✅ 模型加载成功")
+            logger.info(f"   设备: {device}")
             logger.info(f"   向量维度: {self.embedding_dim}")
-            logger.info(f"   模型名称: {Config.EMBEDDING_MODEL}")
             
             # ========== 步骤 2：连接 ChromaDB ==========
             logger.info(f"\n🗄️  连接 ChromaDB...")
@@ -138,6 +156,8 @@ class VectorService:
             
         except Exception as e:
             logger.error(f"❌ 向量服务初始化失败: {e}")
+            import traceback
+            traceback.print_exc()
             raise
     
     # ========== 向量化方法 ==========
@@ -176,53 +196,44 @@ class VectorService:
     
     # ========== 文档管理方法 ==========
     
-    def add_documents(
-        self,
-        texts: List[str],
-        metadatas: Optional[List[Dict]] = None,
-        ids: Optional[List[str]] = None
-    ) -> Dict:
+    def add_documents(self, documents: List[Dict]) -> Dict:
         """
-        添加文档到向量数据库
+        批量添加文档到向量数据库
         
-        Args:
-            texts: 文本列表
-            metadatas: 元数据列表（可选），如 [{"topic": "指针", "source": "教材"}]
-            ids: 文档 ID 列表（可选），如 ["chunk_1", "chunk_2"]
-            
-        Returns:
-            操作结果字典
-            
-        示例:
-            >>> result = vector_service.add_documents(
-            ...     texts=["指针是变量", "链表是结构"],
-            ...     metadatas=[{"topic": "指针"}, {"topic": "链表"}],
-            ...     ids=["1", "2"]
-            ... )
-            >>> result['success']
-            True
+        ⚠️⚠️⚠️ 关键修复：只负责向量化，不负责数据库插入 ⚠️⚠️⚠️
         """
         try:
-            # 1. 参数验证
-            if not texts:
-                return {
-                    'success': False,
-                    'message': '文本列表不能为空'
-                }
+            if not documents:
+                return {'success': False, 'message': '文档列表为空'}
             
-            # 2. 生成默认 ID（如果未提供）
-            if ids is None:
-                ids = [f"doc_{i}" for i in range(len(texts))]
+            logger.info(f"📤 准备添加 {len(documents)} 个文档到向量数据库...")
             
-            # 3. 生成默认元数据（如果未提供）
-            if metadatas is None:
-                metadatas = [{"index": i} for i in range(len(texts))]
+            # ========== 1. 提取文本并生成 ID ==========
+            texts = []
+            metadatas = []
+            ids = []
             
-            # 4. 文本向量化
-            logger.info(f"🔄 正在向量化 {len(texts)} 条文档...")
+            for i, doc in enumerate(documents):
+                # 生成唯一 vector_id
+                vector_id = f"chunk_{int(time.time() * 1000)}_{i}"
+                
+                # ⭐⭐⭐ 关键：将 vector_id 存回原始文档（供后续数据库插入使用）⭐⭐⭐
+                doc['vector_id'] = vector_id
+                
+                texts.append(doc['content'])
+                metadatas.append({
+                    'source': doc.get('source', ''),
+                    'chapter': doc.get('chapter', ''),
+                    'section': doc.get('section', ''),
+                    'level': doc.get('level', 2)
+                })
+                ids.append(vector_id)
+            
+            # ========== 2. 向量化 ==========
+            logger.info(f"📝 向集合 '{self.collection.name}' 添加 {len(texts)} 个文档...")
             embeddings = self.encode(texts)
             
-            # 5. 添加到 ChromaDB
+            # ========== 3. 添加到 ChromaDB ==========
             self.collection.add(
                 documents=texts,
                 embeddings=embeddings,
@@ -230,22 +241,25 @@ class VectorService:
                 ids=ids
             )
             
-            logger.info(f"✅ 成功添加 {len(texts)} 条文档")
+            logger.info(f"✅ 成功添加 {len(texts)} 个文档到向量数据库")
             
+            # ⭐⭐⭐ 注意：不再插入数据库，只返回成功信息 ⭐⭐⭐
             return {
                 'success': True,
-                'message': f'成功添加 {len(texts)} 条文档',
-                'count': len(texts),
-                'ids': ids
+                'message': f'成功添加 {len(texts)} 个文档到向量数据库',
+                'added_count': len(texts)
             }
             
         except Exception as e:
             logger.error(f"❌ 添加文档失败: {e}")
+            import traceback
+            traceback.print_exc()
             return {
                 'success': False,
                 'message': f'添加文档失败: {str(e)}'
             }
-    
+
+
     def search(
         self,
         query: str,

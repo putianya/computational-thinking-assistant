@@ -336,12 +336,18 @@ export const useChatStore = defineStore("chat", () => {
         },
 
         // onDone：流式结束
-        (newSessionId) => {
+        async (newSessionId) => {
           console.log(`✅ 流式输出完成，会话ID: ${newSessionId}`);
 
+          // ⭐⭐⭐ 如果是新创建的会话，需要重新加载会话列表 ⭐⭐⭐
           if (newSessionId && newSessionId !== sessionId.value) {
             sessionId.value = newSessionId;
             console.log(`📍 更新会话ID: ${newSessionId}`);
+
+            // ⭐ 重新加载会话列表，显示新创建的会话
+            console.log("🔄 重新加载会话列表...");
+            await loadSessions();
+            console.log("✅ 会话列表已更新");
           }
 
           isStreaming.value = false;

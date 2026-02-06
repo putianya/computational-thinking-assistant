@@ -78,6 +78,13 @@ class KnowledgeChunk(db.Model):
         db.String(500),
         comment='关键词（逗号分隔，用于关键词检索）'
     )
+
+    level = db.Column(
+        db.Integer,
+        default=2,
+        comment='标题层级（2=##, 3=###）'
+    )
+    
     
     # ========== 向量相关 ==========
     vector_id = db.Column(

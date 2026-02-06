@@ -5,26 +5,34 @@ Flask 应用主程序 - 后端 API 服务
 import os
 import sys
 import io
-import json
 import time
+import uuid
 import traceback
-from pathlib import Path
-from werkzeug.utils import secure_filename  # ⭐ 新增：安全文件名处理
-
-from flask import Flask, jsonify, request, Response, stream_with_context, g
-from flask_cors import CORS
 from datetime import datetime
+from pathlib import Path
+from functools import wraps
+import json
+from flask import Flask, request, jsonify, Response, g,stream_with_context
+from flask_cors import CORS
+from werkzeug.utils import secure_filename
+from sqlalchemy import or_
 
-from config import Config
+# ⭐⭐⭐ 添加缺失的导入 ⭐⭐⭐
+from config import Config  # ← 这行必须存在！
 from database import db, init_db
+from models.user import User
+from models.chat_session import ChatSession
+from models.chat_message import ChatMessage
+from models.knowledge_chunk import KnowledgeChunk
 from services.auth_service import AuthService
 from services.chat_service import ChatService
 from utils.decorators import login_required, require_permission, require_role
-from models.knowledge_chunk import KnowledgeChunk
-from sqlalchemy import or_, and_
 
 # 设置标准输出为 UTF-8 编码
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
+
+# ⭐⭐⭐ 定义 BASE_DIR ⭐⭐⭐
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 # 创建 Flask 应用
 app = Flask(__name__)
@@ -553,134 +561,137 @@ def get_user_profile():
 
 
 
-# ========== ⭐⭐⭐ 知识库管理 API ⭐⭐⭐ ==========
+# ========== ⭐⭐⭐ 知识库管理 API（重构版）⭐⭐⭐ ==========
 
-@app.route('/api/knowledge/chunks', methods=['GET'])
+@app.route('/api/knowledge/documents', methods=['GET'])
 @login_required
-def get_knowledge_chunks():
+def get_knowledge_documents():
     """
-    获取知识库列表（分页、过滤）
-    
-    查询参数：
-    - page: 页码（默认 1）
-    - per_page: 每页数量（默认 20）
-    - source: 按来源过滤（可选）
-    - chapter: 按章节过滤（可选）
-    - search: 搜索关键词（可选）
-    
-    返回格式：
-    {
-        "status": "success",
-        "data": {
-            "chunks": [
-                {
-                    "id": 1,
-                    "content": "指针是...",
-                    "source": "test_pointer.md",
-                    "chapter": "什么是指针",
-                    "char_count": 120,
-                    "retrieved_count": 5,
-                    "created_at": "2026-01-26T10:00:00"
-                }
-            ],
-            "pagination": {
-                "page": 1,
-                "per_page": 20,
-                "total": 13,
-                "pages": 1
-            }
-        }
-    }
+    获取知识库文档列表（包含引用统计）
     """
     try:
-        # 1. 获取查询参数
-        page = request.args.get('page', 1, type=int)
-        per_page = request.args.get('per_page', 20, type=int)
-        source = request.args.get('source', None, type=str)
-        chapter = request.args.get('chapter', None, type=str)
-        search = request.args.get('search', None, type=str)
+        print("📂 获取文档列表...")
         
-        # ⭐ 限制每页数量（防止恶意请求）
-        per_page = min(per_page, 100)
+        knowledge_dir = Path(BASE_DIR) / 'data' / 'knowledge'
         
-        print(f"\n{'='*60}")
-        print(f"📚 获取知识库列表")
-        print(f"   页码: {page}")
-        print(f"   每页: {per_page}")
-        print(f"   来源: {source or '全部'}")
-        print(f"   章节: {chapter or '全部'}")
-        print(f"   搜索: {search or '无'}")
-        
-        # 2. 构建查询条件
-        query = KnowledgeChunk.query.filter_by(is_active=True)
-        
-        # 按来源过滤
-        if source:
-            query = query.filter(KnowledgeChunk.source.like(f'%{source}%'))
-        
-        # 按章节过滤
-        if chapter:
-            query = query.filter(KnowledgeChunk.chapter.like(f'%{chapter}%'))
-        
-        # 搜索（在内容、章节、关键词中搜索）
-        if search:
-            search_pattern = f'%{search}%'
-            query = query.filter(
-                or_(
-                    KnowledgeChunk.content.like(search_pattern),
-                    KnowledgeChunk.chapter.like(search_pattern),
-                    KnowledgeChunk.keywords.like(search_pattern)
-                )
-            )
-        
-        # 3. 分页查询
-        pagination = query.order_by(
-            KnowledgeChunk.created_at.desc()  # 按创建时间降序
-        ).paginate(
-            page=page,
-            per_page=per_page,
-            error_out=False  # 页码超出时不报错
-        )
-        
-        # 4. 构建返回数据（按照指定格式）
-        chunks = []
-        for chunk in pagination.items:
-            chunks.append({
-                'id': chunk.id,
-                'content': chunk.content,
-                'source': chunk.source,
-                'chapter': chunk.chapter,
-                'char_count': chunk.char_count,
-                'retrieved_count': chunk.retrieved_count,
-                'created_at': chunk.created_at.strftime('%Y-%m-%dT%H:%M:%S') if chunk.created_at else None
+        if not knowledge_dir.exists():
+            return jsonify({
+                'status': 'success',
+                'data': {'documents': []}
             })
         
-        print(f"✅ 返回 {len(chunks)} 个知识块")
-        print(f"   总数: {pagination.total}")
-        print(f"   总页数: {pagination.pages}")
-        print(f"{'='*60}\n")
+        documents = []
+        
+        for md_file in knowledge_dir.glob('*.md'):
+            filename = md_file.name
+            
+            # ⭐⭐⭐ 修复：准确统计每个文档的知识块数量 ⭐⭐⭐
+            chunks = KnowledgeChunk.query.filter_by(
+                source=filename,
+                is_active=True  # ⭐ 只统计活跃的
+            ).all()
+            
+            chunks_count = len(chunks)
+            total_retrieved = sum(chunk.retrieved_count for chunk in chunks)
+            
+            print(f"   {filename}: {chunks_count} 个知识块, {total_retrieved} 次引用")
+            
+            documents.append({
+                'name': filename,
+                'size': md_file.stat().st_size,
+                'modified_at': datetime.fromtimestamp(
+                    md_file.stat().st_mtime
+                ).isoformat(),
+                'chunks_count': chunks_count,  # ⭐ 准确的知识块数量
+                'total_retrieved': total_retrieved
+            })
+        
+        documents.sort(key=lambda x: x['modified_at'], reverse=True)
+        
+        print(f"✅ 返回 {len(documents)} 个文档")
         
         return jsonify({
             'status': 'success',
-            'data': {
-                'chunks': chunks,
-                'pagination': {
-                    'page': page,
-                    'per_page': per_page,
-                    'total': pagination.total,
-                    'pages': pagination.pages
+            'data': {'documents': documents}
+        })
+        
+    except Exception as e:
+        print(f"❌ 获取文档列表失败: {e}")
+        import traceback
+        traceback.print_exc()
+        
+        return jsonify({
+            'status': 'error',
+            'message': f'获取文档列表失败: {str(e)}'
+        }), 500
+
+
+@app.route('/api/knowledge/documents/<filename>', methods=['GET'])
+@login_required
+def get_document_chunks(filename):
+    """
+    获取指定文档的知识块列表（包含引用统计）
+    """
+    try:
+        print(f"\n📡 收到请求: GET /api/knowledge/documents/{filename}")
+        
+        # 1. 查询该文档的所有知识块
+        chunks = KnowledgeChunk.query.filter_by(
+            source=filename,
+            is_active=True
+        ).order_by(KnowledgeChunk.id.asc()).all()
+        
+        print(f"📊 查询到 {len(chunks)} 个知识块")
+        
+        if not chunks:
+            return jsonify({
+                'status': 'success',
+                'message': '该文档暂无知识块',
+                'data': {
+                    'filename': filename,
+                    'chunks': []
                 }
+            }), 200
+        
+        # ⭐⭐⭐ 关键修复：确保返回完整的知识块数据 ⭐⭐⭐
+        chunks_data = []
+        for chunk in chunks:
+            chunk_dict = {
+                'id': chunk.id,
+                'content': chunk.content,
+                'chapter': chunk.chapter,
+                'section': chunk.section,
+                'keywords': chunk.keywords,
+                'level': chunk.level,
+                'char_count': chunk.char_count,
+                'word_count': chunk.word_count,
+                'retrieved_count': chunk.retrieved_count or 0,  # ⭐ 默认0
+                'last_retrieved_at': chunk.last_retrieved_at.isoformat() if chunk.last_retrieved_at else None,
+                'created_at': chunk.created_at.isoformat() if chunk.created_at else None,
+            }
+            chunks_data.append(chunk_dict)
+            
+            # 调试：打印每个知识块
+            print(f"   知识块 {chunk.id}: {chunk.chapter}, 引用 {chunk.retrieved_count} 次")
+        
+        # ⭐⭐⭐ 返回格式必须匹配前端期望 ⭐⭐⭐
+        return jsonify({
+            'status': 'success',
+            'message': f'成功获取 {len(chunks_data)} 个知识块',
+            'data': {
+                'filename': filename,
+                'chunks': chunks_data  # ⭐ 确保 chunks 字段存在
             }
         }), 200
         
     except Exception as e:
-        print(f"❌ 获取知识库列表失败: {e}")
+        print(f"❌ 获取知识块失败: {e}")
+        import traceback
         traceback.print_exc()
         return jsonify({
             'status': 'error',
-            'message': f'获取知识库列表失败: {str(e)}'
+            'message': f'获取知识块失败: {str(e)}'
         }), 500
-
 
 
 @app.route('/api/knowledge/upload', methods=['POST'])
@@ -688,152 +699,289 @@ def get_knowledge_chunks():
 @require_permission('upload_doc')
 def upload_document():
     """
-    上传 Markdown 文档
-    
-    权限：需要 teacher 或 admin 角色
-    
-    请求格式：
-    - Content-Type: multipart/form-data
-    - file: Markdown 文件（.md）
-    
-    返回格式：
-    {
-        "status": "success",
-        "message": "文件上传成功",
-        "data": {
-            "file_name": "test.md",
-            "chunks_count": 15,
-            "vector_count": 15,
-            "db_count": 15
-        }
-    }
+    上传 Markdown 文档到 /data/knowledge 目录
     """
     try:
-        # ⭐⭐⭐ 1. 权限检查 ⭐⭐⭐
-        from models.user import User
-        user = User.query.get(g.user_id)
-        
-        if not user or not user.has_permission('upload_doc'):
-            print(f"❌ 无权限上传文档: 用户 {g.user_id}")
-            return jsonify({
-                'status': 'error',
-                'message': '无权限执行此操作，需要教师或管理员权限'
-            }), 403
-        
-        print(f"\n{'='*60}")
-        print(f"📤 文档上传请求")
-        print(f"   操作用户: {user.username} ({user.get_role_display()})")
-        print(f"{'='*60}")
-        
-        # ⭐⭐⭐ 2. 检查是否有文件 ⭐⭐⭐
+        # 1. 检查文件
         if 'file' not in request.files:
-            print(f"❌ 请求中没有文件")
-            return jsonify({
-                'status': 'error',
-                'message': '请选择要上传的文件'
-            }), 400
-        
-        file = request.files['file']
-        
-        # 检查文件名是否为空
-        if file.filename == '':
-            print(f"❌ 文件名为空")
             return jsonify({
                 'status': 'error',
                 'message': '未选择文件'
             }), 400
         
-        print(f"📁 收到文件: {file.filename}")
+        file = request.files['file']
         
-        # ⭐⭐⭐ 3. 验证文件格式（只接受 .md）⭐⭐⭐
-        if not file.filename.lower().endswith('.md'):
-            print(f"❌ 文件格式错误: {file.filename}")
+        if file.filename == '':
             return jsonify({
                 'status': 'error',
-                'message': '只支持 Markdown 文件（.md）'
+                'message': '未选择文件'
             }), 400
         
-        # ⭐⭐⭐ 4. 生成安全的文件名 ⭐⭐⭐
-        # secure_filename 会移除特殊字符，防止路径遍历攻击
-        safe_filename = secure_filename(file.filename)
+        if not file.filename.endswith('.md'):
+            return jsonify({
+                'status': 'error',
+                'message': '只支持 .md 格式的文件'
+            }), 400
         
-        # 如果文件名被完全过滤掉，使用时间戳
-        if not safe_filename:
-            import time
-            safe_filename = f"upload_{int(time.time())}.md"
+        # # 2. 安全处理文件名
+        # filename = secure_filename(file.filename)
+        # if not filename:
+        #     filename = f"document_{int(time.time())}.md"
+
+        filename=file.filename
         
-        print(f"📝 安全文件名: {safe_filename}")
-        
-        # ⭐⭐⭐ 5. 保存文件到 data/knowledge/ ⭐⭐⭐
-        # 获取知识库目录路径
-        knowledge_dir = Path(__file__).resolve().parent / 'data' / 'knowledge'
+        # 3. 保存文件到 /data/knowledge 目录
+        knowledge_dir = Path(BASE_DIR) / 'data' / 'knowledge'
         knowledge_dir.mkdir(parents=True, exist_ok=True)
         
-        file_path = knowledge_dir / safe_filename
+        file_path = knowledge_dir / filename
         
-        # 检查文件是否已存在
-        if file_path.exists():
-            print(f"⚠️  文件已存在，将覆盖: {safe_filename}")
-            # 可选：添加版本号而不是覆盖
-            # base_name = file_path.stem
-            # suffix = file_path.suffix
-            # counter = 1
-            # while file_path.exists():
-            #     safe_filename = f"{base_name}_{counter}{suffix}"
-            #     file_path = knowledge_dir / safe_filename
-            #     counter += 1
+        # 检查是否覆盖现有文件
+        is_overwrite = file_path.exists()
         
-        # 保存文件
         file.save(str(file_path))
         print(f"✅ 文件已保存: {file_path}")
         
-        # ⭐⭐⭐ 6. 立即导入到知识库（分块 + 向量化）⭐⭐⭐
-        print(f"🔄 开始导入知识库...")
+        # 4. 如果是覆盖，先删除旧的知识块
+        if is_overwrite:
+            old_chunks = KnowledgeChunk.query.filter_by(source=filename).all()
+            for chunk in old_chunks:
+                db.session.delete(chunk)
+            db.session.commit()
+            print(f"🗑️ 已删除旧知识块: {len(old_chunks)} 个")
         
-        # 导入导入函数
-        sys.path.insert(0, str(Path(__file__).resolve().parent / 'scripts'))
-        from scripts.import_knowledge import import_single_file
+        # 5. 导入知识库
+        from scripts.import_knowledge import split_by_headers, extract_keywords,import_single_file
+        import time as time_module
         
-        # 调用导入函数
-        import_result = import_single_file(file_path)
+        # 读取文件内容
+        with open(file_path, 'r', encoding='utf-8') as f:
+            content = f.read()
         
-        if not import_result['success']:
-            # 导入失败，删除已保存的文件
-            print(f"❌ 导入失败，删除文件: {file_path}")
-            if file_path.exists():
-                file_path.unlink()
-            
+        # 分块
+        chunks = split_by_headers(content, filename)
+        print(f"✂️ 分割成 {len(chunks)} 个知识块")
+        
+        if not chunks:
             return jsonify({
-                'status': 'error',
-                'message': f"文件上传成功，但导入失败: {import_result['message']}"
-            }), 500
+                'status': 'success',
+                'message': '文件已上传，但未检测到有效内容',
+                'data': {
+                    'file_name': filename,
+                    'chunks_count': 0
+                }
+            })
         
-        # ⭐⭐⭐ 7. 返回成功结果 ⭐⭐⭐
-        print(f"✅ 文档上传并导入成功")
-        print(f"{'='*60}\n")
+        # 6. 导入到向量数据库
+        # from services.vector_service import get_vector_service
+        # vector_service = get_vector_service()
+        
+        timestamp = int(time_module.time() * 1000)
+        texts = [chunk['content'] for chunk in chunks]
+        metadatas = [
+            {
+                'source': chunk['source'],
+                'chapter': chunk['chapter'],
+                'section': chunk.get('section'),
+                'level': chunk.get('level', 2)
+            }
+            for chunk in chunks
+        ]
+        ids = [f"chunk_{timestamp}_{i}" for i in range(len(chunks))]
+        
+        # vector_result = vector_service.add_documents(
+        #     texts=texts,
+        #     metadatas=metadatas,
+        #     ids=ids
+        # )
+        
+        vector_result=import_single_file(Path(file_path))
+
+        # 7. 同步到数据库表
+        db_count = 0
+        for i, chunk in enumerate(chunks):
+            kb_chunk = KnowledgeChunk(
+                content=chunk['content'],
+                source=chunk['source'],
+                chapter=chunk['chapter'],
+                section=chunk.get('section'),
+                keywords=extract_keywords(chunk['content']),
+                vector_id=ids[i],
+                char_count=len(chunk['content'])
+            )
+            kb_chunk.calculate_content_features()
+            db.session.add(kb_chunk)
+            db_count += 1
+        
+        db.session.commit()
+        
+        print(f"✅ 文档上传成功: {filename}")
+        print(f"   知识块数: {len(chunks)}")
+        #print(f"   向量数: {vector_result.get('count', 0)}")
+        print(f"   数据库: {db_count}")
         
         return jsonify({
             'status': 'success',
-            'message': '文件上传并导入成功',
+            'message': '覆盖上传成功' if is_overwrite else '上传成功',
             'data': {
-                'file_name': safe_filename,
-                'chunks_count': import_result['chunks_count'],
-                'vector_count': import_result.get('vector_count', 0),
-                'db_count': import_result.get('db_count', 0)
+                'file_name': filename,
+                'chunks_count': len(chunks),
+                'is_overwrite': is_overwrite
             }
-        }), 200
+        })
         
     except Exception as e:
-        print(f"❌ 文档上传失败: {e}")
+        print(f"❌ 上传失败: {e}")
+        import traceback
         traceback.print_exc()
-        print(f"{'='*60}\n")
+        db.session.rollback()
+        return jsonify({
+            'status': 'error',
+            'message': f'上传失败: {str(e)}'
+        }), 500
+
+
+@app.route('/api/knowledge/documents/<filename>', methods=['DELETE'])
+@login_required
+@require_permission('delete_knowledge')
+def delete_document(filename):
+    """
+    删除文档（同时删除文件、向量、数据库记录）
+    """
+    try:
+        # 1. 安全检查文件名
+        if '..' in filename or '/' in filename or '\\' in filename:
+            return jsonify({
+                'status': 'error',
+                'message': '无效的文件名'
+            }), 400
+        
+        knowledge_dir = Path(BASE_DIR) / 'data' / 'knowledge'
+        file_path = knowledge_dir / filename
+        
+        # 2. 检查文件是否存在
+        if not file_path.exists():
+            return jsonify({
+                'status': 'error',
+                'message': '文件不存在'
+            }), 404
+        
+        # 3. 删除向量数据库中的数据
+        from services.vector_service import get_vector_service
+        vector_service = get_vector_service()
+        
+        # 获取该文档的所有知识块 ID
+        chunks = KnowledgeChunk.query.filter_by(source=filename).all()
+        vector_ids = [chunk.vector_id for chunk in chunks if chunk.vector_id]
+        
+        if vector_ids:
+            try:
+                vector_service.delete_documents(vector_ids)
+                print(f"🗑️ 已删除向量: {len(vector_ids)} 个")
+            except Exception as ve:
+                print(f"⚠️ 删除向量时出错: {ve}")
+        
+        # 4. 删除数据库记录
+        deleted_count = KnowledgeChunk.query.filter_by(source=filename).delete()
+        db.session.commit()
+        print(f"🗑️ 已删除数据库记录: {deleted_count} 条")
+        
+        # 5. 删除物理文件
+        file_path.unlink()
+        print(f"🗑️ 已删除文件: {file_path}")
+        
+        return jsonify({
+            'status': 'success',
+            'message': f'文档 {filename} 已删除',
+            'data': {
+                'filename': filename,
+                'chunks_deleted': deleted_count
+            }
+        })
+        
+    except Exception as e:
+        print(f"❌ 删除文档失败: {e}")
+        import traceback
+        traceback.print_exc()
+        db.session.rollback()
+        return jsonify({
+            'status': 'error',
+            'message': f'删除失败: {str(e)}'
+        }), 500
+
+
+@app.route('/api/knowledge/stats', methods=['GET'])
+@login_required
+def get_knowledge_stats():
+    """
+    获取知识库统计信息
+    """
+    try:
+        print("📊 计算知识库统计...")
+        
+        # ⭐⭐⭐ 修复：准确计算知识块数量 ⭐⭐⭐
+        
+        # 1. 按文档分组统计
+        from sqlalchemy import func
+        
+        doc_stats = db.session.query(
+            KnowledgeChunk.source,
+            func.count(KnowledgeChunk.id).label('chunk_count'),
+            func.sum(KnowledgeChunk.char_count).label('total_chars'),
+            func.sum(KnowledgeChunk.retrieved_count).label('total_retrieved')
+        ).filter(
+            KnowledgeChunk.is_active == True  # 只统计活跃的
+        ).group_by(
+            KnowledgeChunk.source
+        ).all()
+        
+        # 2. 计算总数
+        total_chunks = sum(stat.chunk_count for stat in doc_stats)
+        total_chars = sum(stat.total_chars or 0 for stat in doc_stats)
+        total_retrieved = sum(stat.total_retrieved or 0 for stat in doc_stats)
+        
+        # 3. 文档数（去重）
+        total_docs = len(set(stat.source for stat in doc_stats))
+        
+        print(f"✅ 统计完成:")
+        print(f"   文档数: {total_docs}")
+        print(f"   知识块数: {total_chunks}")
+        print(f"   总字符数: {total_chars}")
+        print(f"   总引用次数: {total_retrieved}")
+        
+        # 4. 验证向量数据库
+        from services.vector_service import get_vector_service
+        vector_service = get_vector_service()
+        vector_info = vector_service.get_collection_info()
+        vector_count = vector_info.get('count', 0)
+        
+        print(f"   向量数据库文档数: {vector_count}")
+        
+        # ⭐ 如果不一致，发出警告
+        if total_chunks != vector_count:
+            print(f"⚠️  警告：数据库知识块数 ({total_chunks}) 与向量数据库 ({vector_count}) 不一致！")
+        
+        return jsonify({
+            'status': 'success',
+            'data': {
+                'document_count': total_docs,
+                'chunk_count': total_chunks,  # ⭐ 准确的知识块数量
+                'total_chars': total_chars,
+                'total_retrieved': total_retrieved,
+                'vector_count': vector_count,  # ⭐ 新增：向量数据库数量
+                'is_synced': total_chunks == vector_count  # ⭐ 是否同步
+            }
+        })
+        
+    except Exception as e:
+        print(f"❌ 获取统计失败: {e}")
+        import traceback
+        traceback.print_exc()
         
         return jsonify({
             'status': 'error',
-            'message': f'文档上传失败: {str(e)}'
+            'message': f'获取统计失败: {str(e)}'
         }), 500
-
-# ...existing code...
 
 @app.route('/api/knowledge/chunks/<int:chunk_id>', methods=['DELETE'])
 @login_required
@@ -930,189 +1078,6 @@ def delete_knowledge_chunk(chunk_id):
             'status': 'error',
             'message': f'删除知识块失败: {str(e)}'
         }), 500
-
-# ...existing code...
-
-@app.route('/api/knowledge/stats', methods=['GET'])
-@login_required
-@require_permission('view_knowledge_stats')
-def get_knowledge_stats():
-    """
-    获取知识库统计信息
-    
-    返回：
-    - 总知识块数
-    - 向量总数
-    - 热门知识块（检索次数最多）
-    - 按来源分布
-    - 按章节分布
-    
-    返回格式：
-    {
-        "status": "success",
-        "data": {
-            "total_chunks": 45,
-            "total_vectors": 45,
-            "sources": [
-                {"name": "test_pointer.md", "count": 12},
-                {"name": "test_linkedlist.md", "count": 15}
-            ],
-            "chapters": [
-                {"name": "什么是指针", "count": 5},
-                {"name": "指针的应用", "count": 7}
-            ],
-            "hot_chunks": [
-                {
-                    "id": 3,
-                    "chapter": "指针的声明",
-                    "retrieved_count": 25,
-                    "source": "test_pointer.md"
-                }
-            ]
-        }
-    }
-    """
-    try:
-        from models.user import User
-        user = User.query.get(g.user_id)
-        
-        # ⭐ 权限检查：只有教师和管理员可以查看统计
-        if not user or not user.has_permission('view_knowledge_stats'):
-            print(f"❌ 无权限查看统计: 用户 {g.user_id}")
-            return jsonify({
-                'status': 'error',
-                'message': '无权限查看知识库统计'
-            }), 403
-        
-        print(f"\n{'='*60}")
-        print(f"📊 获取知识库统计")
-        print(f"   操作用户: {user.username} ({user.get_role_display()})")
-        print(f"{'='*60}")
-        
-        # ========== 1. 数据库统计 ==========
-        
-        # 总知识块数
-        total_chunks = KnowledgeChunk.query.filter_by(is_active=True).count()
-        print(f"📦 总知识块数: {total_chunks}")
-        
-        # 按来源统计
-        source_stats = db.session.query(
-            KnowledgeChunk.source,
-            db.func.count(KnowledgeChunk.id).label('count')
-        ).filter_by(is_active=True)\
-         .group_by(KnowledgeChunk.source)\
-         .order_by(db.text('count DESC'))\
-         .all()
-        
-        sources = [
-            {'name': source, 'count': count}
-            for source, count in source_stats
-        ]
-        print(f"📚 来源数: {len(sources)}")
-        
-        # 按章节统计
-        chapter_stats = db.session.query(
-            KnowledgeChunk.chapter,
-            db.func.count(KnowledgeChunk.id).label('count')
-        ).filter_by(is_active=True)\
-         .group_by(KnowledgeChunk.chapter)\
-         .order_by(db.text('count DESC'))\
-         .limit(10)\
-         .all()
-        
-        chapters = [
-            {'name': chapter or '未分类', 'count': count}
-            for chapter, count in chapter_stats
-        ]
-        print(f"📖 章节数: {len(chapters)}")
-        
-        # 热门知识块（检索次数最多的前 10 个）
-        hot_chunks = KnowledgeChunk.query\
-            .filter_by(is_active=True)\
-            .filter(KnowledgeChunk.retrieved_count > 0)\
-            .order_by(KnowledgeChunk.retrieved_count.desc())\
-            .limit(10)\
-            .all()
-        
-        hot_chunks_data = [
-            {
-                'id': chunk.id,
-                'source': chunk.source,
-                'chapter': chunk.chapter,
-                'section': chunk.section,
-                'retrieved_count': chunk.retrieved_count,
-                'content_preview': chunk.content[:80] + '...' if len(chunk.content) > 80 else chunk.content
-            }
-            for chunk in hot_chunks
-        ]
-        print(f"🔥 热门知识块: {len(hot_chunks_data)}")
-        
-        # ========== 2. 向量数据库统计 ==========
-        
-        try:
-            from services.vector_service import get_vector_service
-            vector_service = get_vector_service()
-            
-            vector_info = vector_service.get_collection_info()
-            total_vectors = vector_info.get('count', 0)
-            print(f"🧠 向量总数: {total_vectors}")
-            
-        except Exception as ve:
-            print(f"⚠️ 获取向量统计失败: {ve}")
-            total_vectors = 0
-        
-        # ========== 3. 内容质量统计 ==========
-        
-        # 平均字符数
-        avg_char_count = db.session.query(
-            db.func.avg(KnowledgeChunk.char_count)
-        ).filter_by(is_active=True).scalar() or 0
-        
-        # 包含代码的知识块数
-        code_chunk_count = KnowledgeChunk.query.filter_by(
-            is_active=True,
-            has_code=True
-        ).count()
-        
-        print(f"📏 平均字符数: {avg_char_count:.0f}")
-        print(f"💻 包含代码: {code_chunk_count} 个")
-        
-        # ========== 4. 构建返回数据 ==========
-        
-        print(f"✅ 统计信息获取成功")
-        print(f"{'='*60}\n")
-        
-        return jsonify({
-            'status': 'success',
-            'data': {
-                # 总体统计
-                'total_chunks': total_chunks,
-                'total_vectors': total_vectors,
-                'avg_char_count': round(avg_char_count, 0),
-                'code_chunk_count': code_chunk_count,
-                
-                # 分布统计
-                'sources': sources,
-                'chapters': chapters,
-                
-                # 热门内容
-                'hot_chunks': hot_chunks_data,
-                
-                # 元信息
-                'last_updated': datetime.now().isoformat()
-            }
-        }), 200
-        
-    except Exception as e:
-        print(f"❌ 获取统计信息失败: {e}")
-        traceback.print_exc()
-        print(f"{'='*60}\n")
-        return jsonify({
-            'status': 'error',
-            'message': f'获取统计信息失败: {str(e)}'
-        }), 500
-
-# ...existing code...
 
 @app.route('/api/knowledge/chunks/<int:chunk_id>', methods=['PUT'])
 @login_required
@@ -1326,8 +1291,6 @@ def update_knowledge_chunk(chunk_id):
             'status': 'error',
             'message': f'更新知识块失败: {str(e)}'
         }), 500
-
-# ...existing code...
 
 # ========== ⭐⭐⭐ 用户管理 API（仅管理员）⭐⭐⭐ ==========
 

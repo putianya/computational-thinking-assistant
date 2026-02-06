@@ -19,6 +19,7 @@ import argparse
 from pathlib import Path
 from datetime import datetime
 import traceback
+import hashlib
 
 # 添加项目根目录到 Python 路径
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
@@ -100,17 +101,30 @@ def split_by_headers(markdown_text, source_file, max_length=1000):
     # 正则表达式：匹配 Markdown 标题（## 或 ###）
     header_pattern = re.compile(r'^(###+)\s+(.+)$', re.MULTILINE)
     
-    # 查找所有标题位置
+    # 查找所有标题
     matches = list(header_pattern.finditer(markdown_text))
     
+    print(f"\n   找到 {len(matches)} 个标题:")
+    for i, match in enumerate(matches, 1):
+        level = len(match.group(1))
+        title = match.group(2).strip()
+        print(f"      {i}. {'#' * level} {title} (位置: {match.start()})")
+    
     if not matches:
-        # 如果没有标题，将整个文档作为一块
+        print(f"   ⚠️  未找到标题，尝试手动分割")
+        
+        # ⭐⭐⭐ 如果正则失败，尝试手动分割 ⭐⭐⭐
+        manual_chunks = manual_split_by_lines(markdown_text, source_file)
+        if manual_chunks:
+            print(f"   ✅ 手动分割成功: {len(manual_chunks)} 个块")
+            return manual_chunks
+        
+        # 最后手段：整个文档作为一块
         if markdown_text.strip():
-            # ⭐ 直接调用分割函数
             sub_chunks = split_long_chunk(
                 markdown_text.strip(), 
                 source_file.replace('.md', ''),
-                None,
+                '',
                 1,
                 max_length
             )
@@ -119,41 +133,34 @@ def split_by_headers(markdown_text, source_file, max_length=1000):
     
     # 遍历每个标题，提取对应的内容块
     for i, match in enumerate(matches):
-        # 标题级别（## = 2, ### = 3）
         level = len(match.group(1))
-        
-        # 标题文本
         title = match.group(2).strip()
-        
-        # 内容起始位置
         start_pos = match.start()
         
-        # 内容结束位置（下一个标题开始，或文档末尾）
+        # 内容结束位置
         if i + 1 < len(matches):
             end_pos = matches[i + 1].start()
         else:
             end_pos = len(markdown_text)
         
-        # 提取完整内容（包含标题）
+        # 提取完整内容
         content = markdown_text[start_pos:end_pos].strip()
         
-        # 过滤条件
         if not content:
             continue
         
-        # 过滤纯代码块（至少要有一些说明文字）
+        # 过滤纯代码块
         code_block_pattern = re.compile(r'```[\s\S]+?```')
         content_without_code = code_block_pattern.sub('', content)
         
         if len(content_without_code.strip()) < 20:
-            continue  # 跳过内容过少的块
+            continue
         
         # 判断层级关系
         if level == 2:
             chapter = title
-            section = None
+            section = ''
         elif level == 3:
-            # 找到上一个 ## 标题作为章节
             chapter = None
             for prev_match in reversed(matches[:i]):
                 if len(prev_match.group(1)) == 2:
@@ -165,119 +172,246 @@ def split_by_headers(markdown_text, source_file, max_length=1000):
             
             section = title
         else:
-            # 其他级别（#### 等）归入上一个章节
             chapter = source_file.replace('.md', '')
             section = title
         
-        # ⭐⭐⭐ 新增：检查块长度，超长则分割 ⭐⭐⭐
+        # 检查块长度
         if len(content) > max_length:
             print(f"⚠️  块过长 ({len(content)} 字符)，进行分割: {chapter} - {section}")
-            sub_chunks = split_long_chunk(content, chapter, section, level, max_length)
+            sub_chunks = split_long_chunk(
+                content, 
+                chapter, 
+                section or '',
+                level, 
+                max_length
+            )
             chunks.extend(sub_chunks)
         else:
-            # 添加到结果
             chunks.append({
                 'content': content,
                 'source': source_file,
                 'chapter': chapter,
-                'section': section,
+                'section': section or '',
                 'level': level
             })
     
     return chunks
 
-
-# ⭐⭐⭐ 新增：长块分割函数 ⭐⭐⭐
-def split_long_chunk(content, chapter, section, level, max_length=1000):
+def manual_split_by_lines(markdown_text, source_file):
     """
-    分割超长的知识块
+    ⭐⭐⭐ 新增：手动按行分割（正则失败时的后备方案）⭐⭐⭐
+    """
+    chunks = []
+    lines = markdown_text.split('\n')
     
-    策略：
-    1. 按空行（\\n\\n）分割段落
-    2. 合并段落直到接近 max_length
-    3. 如果单个段落超长，按句号分割
+    current_chapter = None
+    current_section = None
+    current_content = []
+    current_level = 2
     
-    Args:
-        content: 原始内容
-        chapter: 章节名
-        section: 小节名
-        level: 标题级别
-        max_length: 最大长度
+    for line in lines:
+        stripped = line.strip()
         
-    Returns:
-        list: 分割后的块列表
-    """
-    # 1. 按空行分割段落
-    paragraphs = re.split(r'\n\s*\n', content)
+        # 检测标题（宽松匹配）
+        if stripped.startswith('##') and not stripped.startswith('###'):
+            # 保存之前的内容
+            if current_content:
+                content = '\n'.join(current_content).strip()
+                if content:
+                    chunks.append({
+                        'content': content,
+                        'source': source_file,
+                        'chapter': current_chapter or source_file.replace('.md', ''),
+                        'section': current_section or '',
+                        'level': current_level
+                    })
+                current_content = []
+            
+            # 提取新标题
+            title = stripped.lstrip('#').strip()
+            current_chapter = title
+            current_section = ''
+            current_level = 2
+            current_content.append(line)
+        
+        elif stripped.startswith('###'):
+            # 三级标题
+            if current_content:
+                content = '\n'.join(current_content).strip()
+                if content:
+                    chunks.append({
+                        'content': content,
+                        'source': source_file,
+                        'chapter': current_chapter or source_file.replace('.md', ''),
+                        'section': current_section or '',
+                        'level': current_level
+                    })
+                current_content = []
+            
+            title = stripped.lstrip('#').strip()
+            current_section = title
+            current_level = 3
+            current_content.append(line)
+        
+        else:
+            current_content.append(line)
     
-    sub_chunks = []
-    current_chunk = ""
+    # 保存最后一块
+    if current_content:
+        content = '\n'.join(current_content).strip()
+        if content:
+            chunks.append({
+                'content': content,
+                'source': source_file,
+                'chapter': current_chapter or source_file.replace('.md', ''),
+                'section': current_section or '',
+                'level': current_level
+            })
+    
+    return chunks
+
+
+# # ⭐⭐⭐ 新增：长块分割函数 ⭐⭐⭐
+# def split_long_chunk(content, chapter, section, level, max_length=1000):
+#     """
+#     分割超长的知识块
+    
+#     策略：
+#     1. 按空行（\\n\\n）分割段落
+#     2. 合并段落直到接近 max_length
+#     3. 如果单个段落超长，按句号分割
+    
+#     Args:
+#         content: 原始内容
+#         chapter: 章节名
+#         section: 小节名
+#         level: 标题级别
+#         max_length: 最大长度
+        
+#     Returns:
+#         list: 分割后的块列表
+#     """
+#     # 1. 按空行分割段落
+#     paragraphs = re.split(r'\n\s*\n', content)
+    
+#     sub_chunks = []
+#     current_chunk = ""
+    
+#     for para in paragraphs:
+#         para = para.strip()
+#         if not para:
+#             continue
+        
+#         # 2. 尝试合并段落
+#         if len(current_chunk) + len(para) + 2 <= max_length:
+#             # 可以合并
+#             if current_chunk:
+#                 current_chunk += "\n\n" + para
+#             else:
+#                 current_chunk = para
+#         else:
+#             # 无法合并
+#             if current_chunk:
+#                 # 保存当前块
+#                 sub_chunks.append({
+#                     'content': current_chunk,
+#                     'source': f"{chapter}.md" if chapter else "unknown.md",
+#                     'chapter': chapter,
+#                     'section': section,
+#                     'level': level
+#                 })
+            
+#             # 3. 检查单个段落是否超长
+#             if len(para) > max_length:
+#                 # 按句号分割
+#                 sentences = re.split(r'([。.!?！？])', para)
+                
+#                 temp_chunk = ""
+#                 for i in range(0, len(sentences), 2):
+#                     sentence = sentences[i]
+#                     punct = sentences[i + 1] if i + 1 < len(sentences) else ""
+                    
+#                     full_sentence = sentence + punct
+                    
+#                     if len(temp_chunk) + len(full_sentence) <= max_length:
+#                         temp_chunk += full_sentence
+#                     else:
+#                         if temp_chunk:
+#                             sub_chunks.append({
+#                                 'content': temp_chunk,
+#                                 'source': f"{chapter}.md" if chapter else "unknown.md",
+#                                 'chapter': chapter,
+#                                 'section': section,
+#                                 'level': level
+#                             })
+#                         temp_chunk = full_sentence
+                
+#                 current_chunk = temp_chunk
+#             else:
+#                 current_chunk = para
+    
+#     # 4. 保存最后一个块
+#     if current_chunk:
+#         sub_chunks.append({
+#             'content': current_chunk,
+#             'source': f"{chapter}.md" if chapter else "unknown.md",
+#             'chapter': chapter,
+#             'section': section,
+#             'level': level
+#         })
+    
+#     print(f"   ✂️  分割成 {len(sub_chunks)} 个子块")
+#     return sub_chunks
+
+def split_long_chunk(content, chapter, section, level, max_length=1000):
+    """分割超长文本块"""
+    chunks = []
+    
+    # ⭐⭐⭐ 修复：确保参数不为 None ⭐⭐⭐
+    chapter = chapter or '未分类'
+    section = section or ''
+    
+    # 按段落分割
+    paragraphs = content.split('\n\n')
+    
+    current_chunk = ''
+    chunk_index = 1
     
     for para in paragraphs:
         para = para.strip()
         if not para:
             continue
         
-        # 2. 尝试合并段落
-        if len(current_chunk) + len(para) + 2 <= max_length:
-            # 可以合并
+        # 如果加上这段会超长
+        if len(current_chunk) + len(para) + 2 > max_length:
+            # 保存当前块
             if current_chunk:
-                current_chunk += "\n\n" + para
-            else:
-                current_chunk = para
-        else:
-            # 无法合并
-            if current_chunk:
-                # 保存当前块
-                sub_chunks.append({
-                    'content': current_chunk,
-                    'source': f"{chapter}.md" if chapter else "unknown.md",
+                chunks.append({
+                    'content': current_chunk.strip(),
+                    'source': 'split_chunk',
                     'chapter': chapter,
-                    'section': section,
+                    'section': f"{section} (第{chunk_index}部分)" if section else f"第{chunk_index}部分",
                     'level': level
                 })
-            
-            # 3. 检查单个段落是否超长
-            if len(para) > max_length:
-                # 按句号分割
-                sentences = re.split(r'([。.!?！？])', para)
-                
-                temp_chunk = ""
-                for i in range(0, len(sentences), 2):
-                    sentence = sentences[i]
-                    punct = sentences[i + 1] if i + 1 < len(sentences) else ""
-                    
-                    full_sentence = sentence + punct
-                    
-                    if len(temp_chunk) + len(full_sentence) <= max_length:
-                        temp_chunk += full_sentence
-                    else:
-                        if temp_chunk:
-                            sub_chunks.append({
-                                'content': temp_chunk,
-                                'source': f"{chapter}.md" if chapter else "unknown.md",
-                                'chapter': chapter,
-                                'section': section,
-                                'level': level
-                            })
-                        temp_chunk = full_sentence
-                
-                current_chunk = temp_chunk
-            else:
-                current_chunk = para
+                chunk_index += 1
+                current_chunk = ''
+        
+        # 添加段落
+        if current_chunk:
+            current_chunk += '\n\n'
+        current_chunk += para
     
-    # 4. 保存最后一个块
+    # 保存最后一个块
     if current_chunk:
-        sub_chunks.append({
-            'content': current_chunk,
-            'source': f"{chapter}.md" if chapter else "unknown.md",
+        chunks.append({
+            'content': current_chunk.strip(),
+            'source': 'split_chunk',
             'chapter': chapter,
-            'section': section,
+            'section': f"{section} (第{chunk_index}部分)" if section else f"第{chunk_index}部分",
             'level': level
         })
     
-    print(f"   ✂️  分割成 {len(sub_chunks)} 个子块")
-    return sub_chunks
+    return chunks
 
 
 # ========== 步骤 3：导入到向量数据库 ==========
@@ -295,7 +429,8 @@ def import_to_vector_db(chunks):
     if not chunks:
         return {
             'success': False,
-            'message': '没有可导入的知识块'
+            'message': '知识块列表为空',
+            'added_count': 0 
         }
     
     print("\n" + "=" * 60)
@@ -305,94 +440,105 @@ def import_to_vector_db(chunks):
     # 获取向量服务
     vector_service = get_vector_service()
     
-    # 提取数据
-    texts = [chunk['content'] for chunk in chunks]
-    metadatas = [
-        {
-            'source': chunk['source'],
-            'chapter': chunk['chapter'],
-            'section': chunk.get('section'),
+    # ⭐⭐⭐ 修复：构建正确的文档格式 ⭐⭐⭐
+    # add_documents 期望的格式是 List[Dict]，每个 Dict 包含：
+    # - content: 文档内容
+    # - source: 来源文件
+    # - chapter: 章节名
+    # - section: 小节名（可选）
+    # - level: 标题层级
+    
+    documents = []
+    for chunk in chunks:
+        doc = {
+            'content': chunk['content'],
+            'source': chunk.get('source', 'unknown'),
+            'chapter': chunk.get('chapter', '未分类'),
+            'section': chunk.get('section') or '',  # ⭐ None 转为空字符串
             'level': chunk.get('level', 2)
         }
-        for chunk in chunks
-    ]
-    ids = [f"chunk_{i}" for i in range(len(chunks))]
+        documents.append(doc)
     
-    # 批量导入
-    result = vector_service.add_documents(
-        texts=texts,
-        metadatas=metadatas,
-        ids=ids
-    )
+    # 调用向量服务的 add_documents 方法
+    result = vector_service.add_documents(documents)
+    
+    if result['success']:
+        print(f"✅ 向量数据库导入成功: {result['added_count']} 个块")
+    else:
+        print(f"❌ 向量数据库导入失败: {result['message']}")
     
     return result
 
 
 # ========== 步骤 4：同步到数据库表 ==========
 
-def sync_to_database(chunks):
+def sync_to_database(chunks, vector_service):
     """
-    同步知识块到 KnowledgeChunk 表
-    """
-    print("\n" + "=" * 60)
-    print("💾 同步到数据库表...")
-    print("=" * 60)
+    同步知识块到 SQLite 数据库
     
-    with app.app_context():
-        # ⭐ 先检查模型字段
-        print("\n🔍 检查 KnowledgeChunk 模型字段:")
-        for col in KnowledgeChunk.__table__.columns:
-            print(f"   - {col.name}")
-        
-        # ⭐⭐⭐ 新增：清空现有数据 ⭐⭐⭐
-        print("\n🗑️  清空现有数据...")
-        deleted_count = KnowledgeChunk.query.delete()
-        db.session.commit()
-        print(f"   已删除 {deleted_count} 条旧记录")
+    ⚠️⚠️⚠️ 修复：确保在应用上下文中执行 ⚠️⚠️⚠️
+    """
+    try:
+        from models.knowledge_chunk import KnowledgeChunk
+        import hashlib
         
         inserted_count = 0
+        skipped_count = 0
         
-        for i, chunk in enumerate(chunks):
-            try:
-                chunk_data = {
-                    'vector_id': f"chunk_{i}",
-                    'content': chunk['content'],
-                    'chapter': chunk['chapter'],
-                    'section': chunk.get('section'),
-                    'keywords': extract_keywords(chunk['content'])
-                }
-                
-                if hasattr(KnowledgeChunk, 'source'):
-                    chunk_data['source'] = chunk['source']
-                elif hasattr(KnowledgeChunk, 'source_file'):
-                    chunk_data['source_file'] = chunk['source']
-                elif hasattr(KnowledgeChunk, 'file_name'):
-                    chunk_data['file_name'] = chunk['source']
-                
-                knowledge_chunk = KnowledgeChunk(**chunk_data)
-                db.session.add(knowledge_chunk)
-                db.session.flush()
-                
-                inserted_count += 1
-                
-                if (i + 1) % 10 == 0:
-                    print(f"   已插入 {i + 1}/{len(chunks)} 条...")
-                
-            except Exception as e:
-                print(f"❌ 插入失败 (chunk_{i}): {e}")
-                print(f"   数据: {chunk['source']} - {chunk['chapter']}")
-                db.session.rollback()
+        for chunk in chunks:
+            # ⭐⭐⭐ 1. 生成 content_hash ⭐⭐⭐
+            content_hash = hashlib.md5(chunk['content'].encode()).hexdigest()
+            
+            # ⭐⭐⭐ 2. 检查是否已存在（通过 content_hash 去重）⭐⭐⭐
+            existing = KnowledgeChunk.query.filter_by(
+                content_hash=content_hash
+            ).first()
+            
+            if existing:
+                print(f"⚠️  跳过重复知识块: {chunk['chapter']} (ID: {existing.id})")
+                skipped_count += 1
                 continue
+            
+            # ⭐⭐⭐ 3. 提取关键词 ⭐⭐⭐
+            keywords = extract_keywords(chunk['content'])
+            
+            # ⭐⭐⭐ 4. 创建知识块记录（确保设置 content_hash）⭐⭐⭐
+            kb_chunk = KnowledgeChunk(
+                content=chunk['content'],
+                content_hash=content_hash,  # ⭐⭐⭐ 必须设置！⭐⭐⭐
+                source=chunk['source'],
+                chapter=chunk.get('chapter'),
+                section=chunk.get('section'),
+                keywords=keywords,
+                level=chunk.get('level', 2),
+                vector_id=chunk.get('vector_id'),  # ⭐ 使用 vector_service 生成的 ID
+                embedding_model='text-embedding-ada-002',
+                char_count=len(chunk['content']),
+                word_count=len(chunk['content'].split())
+            )
+            
+            db.session.add(kb_chunk)
+            inserted_count += 1
         
+        db.session.commit()
+        
+        print(f"✅ 数据库同步完成: 新增 {inserted_count} 个，跳过 {skipped_count} 个重复")
+        
+        return inserted_count
+        
+    except Exception as e:
+        print(f"❌ 数据库同步失败: {e}")
+        import traceback
+        traceback.print_exc()
+        
+        # ⭐⭐⭐ 修复：只在上下文存在时才 rollback ⭐⭐⭐
         try:
-            db.session.commit()
-            print(f"✅ 成功插入 {inserted_count} 条记录")
-            return inserted_count
-        
-        except Exception as e:
             db.session.rollback()
-            print(f"❌ 数据库提交失败: {e}")
-            return 0
+        except RuntimeError as re:
+            # 如果上下文不存在，打印警告但不中断
+            print(f"⚠️  无法回滚事务（上下文已退出）: {re}")
+        
+        return 0
 
 
 # ⭐⭐⭐ 修复：extract_keywords 函数 ⭐⭐⭐
@@ -463,90 +609,77 @@ def extract_keywords(content):
 # ========== 主函数 ==========
 
 def import_knowledge():
-    """
-    主函数:导入知识库
-    
-    流程:
-        1. 读取所有 Markdown 文件
-        2. 分块处理
-        3. 导入到向量数据库
-        4. 同步到数据库表
-    """
+    """主函数：导入知识库"""
     print("=" * 60)
     print("🚀 开始导入知识库")
     print("=" * 60)
     print(f"时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print("=" * 60)
     
-    # ⭐⭐⭐ 修复: 正确计算知识库目录路径 ⭐⭐⭐
     # 获取脚本所在目录的父目录 (backend/)
     script_dir = Path(__file__).resolve().parent  # scripts/
-    backend_dir = script_dir.parent                # backend/
+    backend_dir = script_dir.parent  # backend/
     knowledge_dir = backend_dir / 'data' / 'knowledge'
     
-    print(f"\n📂 读取目录: {knowledge_dir}")
-    print(f"   目录是否存在: {knowledge_dir.exists()}")
+    print(f"\n📂 知识库目录: {knowledge_dir}")
     
     if not knowledge_dir.exists():
-        print(f"❌ 目录不存在,请检查路径!")
+        print(f"❌ 知识库目录不存在: {knowledge_dir}")
         return
     
-    # 列出目录中的文件
-    md_files = list(knowledge_dir.glob('*.md'))
-    print(f"   找到 {len(md_files)} 个 .md 文件:")
-    for f in md_files:
-        print(f"      - {f.name}")
+    # 1. 读取文件
+    markdown_files = load_markdown_files(knowledge_dir)
     
-    files = load_markdown_files(knowledge_dir)
-    
-    if not files:
-        print("❌ 未找到任何 Markdown 文件")
+    if not markdown_files:
+        print("❌ 没有找到 Markdown 文件")
         return
     
-    print(f"✅ 成功读取 {len(files)} 个文件")
-    
-    # ========== 步骤 2: 分块 ==========
-    print("\n✂️  开始分块...")
+    # 2. 分块处理
     all_chunks = []
     
-    for file_path, content in files:
-        chunks = split_by_headers(content, file_path.name, max_length=1000)
+    for file_path, content in markdown_files:
+        print(f"\n📄 处理文件: {file_path.name}")
+        
+        chunks = split_by_headers(content, file_path.name)
+        
+        print(f"   ✅ 分块完成: {len(chunks)} 个块")
+        
         all_chunks.extend(chunks)
-        print(f"   {file_path.name}: {len(chunks)} 个块")
     
-    print(f"\n✅ 共分割 {len(all_chunks)} 个知识块")
+    print(f"\n📊 总计: {len(all_chunks)} 个知识块")
     
-    # 打印前 3 个块的预览
-    print("\n📋 知识块预览:")
-    for i, chunk in enumerate(all_chunks[:3], 1):
-        print(f"\n块 {i}:")
-        print(f"  来源: {chunk['source']}")
-        print(f"  章节: {chunk['chapter']}")
-        print(f"  小节: {chunk.get('section', 'N/A')}")
-        print(f"  长度: {len(chunk['content'])} 字符")
-        print(f"  内容: {chunk['content'][:80]}...")
-    
-    # ========== 步骤 3: 导入向量数据库 ==========
+    # 3. 导入到向量数据库
     result = import_to_vector_db(all_chunks)
     
     if not result['success']:
         print(f"❌ 向量数据库导入失败: {result['message']}")
         return
     
-    print(f"✅ 向量数据库导入成功: {result['count']} 个块")
+    # ⭐⭐⭐ 4. 修复：确保在应用上下文中同步数据库 ⭐⭐⭐
+    try:
+        with app.app_context():
+            print("\n📥 同步到数据库...")
+            inserted_count = sync_to_database(all_chunks, get_vector_service())
+            
+            if inserted_count > 0:
+                print(f"✅ 成功同步 {inserted_count} 个知识块到数据库")
+            else:
+                print("⚠️  没有新知识块被同步")
+    except Exception as e:
+        print(f"❌ 数据库同步过程出错: {e}")
+        import traceback
+        traceback.print_exc()
+        return
     
-    # ========== 步骤 4: 同步到数据库 ==========
-    inserted_count = sync_to_database(all_chunks)
-    
-    # ========== 完成 ==========
+    # 5. 打印汇总
     print("\n" + "=" * 60)
-    print("🎉 知识库导入完成")
+    print("✅ 导入完成")
     print("=" * 60)
-    print(f"📊 统计信息:")
-    print(f"   文件数: {len(files)}")
-    print(f"   知识块数: {len(all_chunks)}")
-    print(f"   向量数据库: {result['count']} 条")
-    print(f"   数据库表: {inserted_count} 条")
+    print(f"📊 统计:")
+    print(f"   文件数: {len(markdown_files)}")
+    print(f"   知识块总数: {len(all_chunks)}")
+    print(f"   向量数据库: {result['added_count']} 个")
+    print(f"   SQLite 数据库: {inserted_count} 个")
     print("=" * 60)
 
 
@@ -576,7 +709,7 @@ if __name__ == '__main__':
     # 执行导入
     import_knowledge()
 
-# ⭐⭐⭐ 在文件末尾添加可导入的函数 ⭐⭐⭐
+# # ⭐⭐⭐ 在文件末尾添加可导入的函数 ⭐⭐⭐
 
 def import_single_file(file_path: Path) -> dict:
     """
@@ -642,24 +775,29 @@ def import_single_file(file_path: Path) -> dict:
                 'chunks_count': 0,
                 'file_name': file_path.name
             }
+
+    
         
-        # 5. 同步到数据库
-        inserted_count = sync_to_database(chunks)
+    #      # ⭐⭐⭐ 修复：获取 vector_service 并传递给 sync_to_database ⭐⭐⭐
+    #     from services.vector_service import get_vector_service
+    #     vector_service = get_vector_service()
+    # #     # 5. 同步到数据库
+    #     inserted_count = sync_to_database(chunks,vector_service)
         
-        print(f"✅ 导入成功: {file_path.name}")
-        print(f"   知识块数: {len(chunks)}")
-        print(f"   向量数: {vector_result['count']}")
-        print(f"   数据库记录: {inserted_count}")
-        print(f"{'='*60}\n")
+    #     print(f"✅ 导入成功: {file_path.name}")
+    #     print(f"   知识块数: {len(chunks)}")
+    #     print(f"   向量数: {vector_result['count']}")
+    #     print(f"   数据库记录: {inserted_count}")
+    #     print(f"{'='*60}\n")
         
-        return {
-            'success': True,
-            'message': '导入成功',
-            'chunks_count': len(chunks),
-            'vector_count': vector_result['count'],
-            'db_count': inserted_count,
-            'file_name': file_path.name
-        }
+    #     return {
+    #         'success': True,
+    #         'message': '导入成功',
+    #         'chunks_count': len(chunks),
+    #         'vector_count': vector_result['count'],
+    #         'db_count': inserted_count,
+    #         'file_name': file_path.name
+    #     }
         
     except Exception as e:
         print(f"❌ 导入失败: {e}")

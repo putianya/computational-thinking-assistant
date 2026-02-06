@@ -54,6 +54,11 @@ class Config:
     COLLECTION_NAME = os.getenv('COLLECTION_NAME', 'computational_thinking')
     TOP_K_RESULTS = int(os.getenv('TOP_K_RESULTS', 3))
     SIMILARITY_THRESHOLD = float(os.getenv('SIMILARITY_THRESHOLD', 0.65))
+
+    # ========== ⭐⭐⭐ 新增：RAG 智能降级配置 ⭐⭐⭐ ==========
+    RAG_HIGH_CONFIDENCE = float(os.getenv('RAG_HIGH_CONFIDENCE', 0.80))
+    RAG_MEDIUM_CONFIDENCE = float(os.getenv('RAG_MEDIUM_CONFIDENCE', 0.60))
+    RAG_LOW_CONFIDENCE = float(os.getenv('RAG_LOW_CONFIDENCE', 0.40))
     
     # ========== 系统提示词 ==========
     SYSTEM_PROMPT = os.getenv(
