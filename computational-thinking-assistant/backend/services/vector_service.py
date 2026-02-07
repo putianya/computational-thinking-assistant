@@ -214,18 +214,16 @@ class VectorService:
             ids = []
             
             for i, doc in enumerate(documents):
-                # 生成唯一 vector_id
+                
                 vector_id = f"chunk_{int(time.time() * 1000)}_{i}"
-                
-                # ⭐⭐⭐ 关键：将 vector_id 存回原始文档（供后续数据库插入使用）⭐⭐⭐
                 doc['vector_id'] = vector_id
-                
                 texts.append(doc['content'])
                 metadatas.append({
                     'source': doc.get('source', ''),
                     'chapter': doc.get('chapter', ''),
                     'section': doc.get('section', ''),
-                    'level': doc.get('level', 2)
+                    'level': doc.get('level', 2),
+                    'chunk_id': doc.get('chunk_id')  # ⚠️ 这里是 None！需要在导入时传入
                 })
                 ids.append(vector_id)
             
@@ -247,7 +245,8 @@ class VectorService:
             return {
                 'success': True,
                 'message': f'成功添加 {len(texts)} 个文档到向量数据库',
-                'added_count': len(texts)
+                'added_count': len(texts),
+                'vector_ids': ids  # ⭐ 返回向量ID列表
             }
             
         except Exception as e:
@@ -268,83 +267,76 @@ class VectorService:
     ) -> List[Dict]:
         """检索相似文档（RAG 核心功能）"""
         try:
-            if not query:
-                return []
+            top_k = top_k or Config.TOP_K_RESULTS
+            threshold = Config.SIMILARITY_THRESHOLD
             
-            k = top_k if top_k is not None else Config.TOP_K_RESULTS
+            logger.info(f"🔍 开始检索: '{query[:20]}...' (top_k={top_k}, threshold={threshold})")
             
-            logger.info(f"🔍 开始检索: '{query[:20]}...' (top_k={k}, threshold={Config.SIMILARITY_THRESHOLD})")
-            
-            # 1. 向量化查询
-            query_embedding = self.encode([query])[0]
-            
-            logger.info(f"\n{'=' * 60}")
+            # 调试信息
+            logger.info(f"\n{'='*60}")
             logger.info(f"🔍 向量检索调试信息")
-            logger.info(f"{'=' * 60}")
+            logger.info(f"{'='*60}")
             logger.info(f"查询文本: {query}")
+            
+            # 生成查询向量
+            query_embedding = self.encode([query])[0]
             logger.info(f"查询向量维度: {len(query_embedding)}")
-            logger.info(f"Top-K: {k}")
-            logger.info(f"阈值: {Config.SIMILARITY_THRESHOLD}")
+            logger.info(f"Top-K: {top_k}")
+            logger.info(f"阈值: {threshold}")
             logger.info(f"集合文档数: {self.collection.count()}")
             
-            # 2. 检索
+            # 执行检索 - ⭐⭐⭐ 确保包含 metadatas ⭐⭐⭐
             results = self.collection.query(
                 query_embeddings=[query_embedding],
-                n_results=k,
-                where=filter_metadata,
+                n_results=top_k,
                 include=['documents', 'metadatas', 'distances']
             )
             
-            logger.info(f"\n📊 ChromaDB 原始结果:")
-            logger.info(f"   返回文档数: {len(results['ids'][0]) if results['ids'] else 0}")
-            if results.get('distances'):
-                logger.info(f"   距离值: {results['distances'][0]}")
-            
-            # 3. 转换格式
+            # 解析结果
             documents = []
             
-            if results['ids'] and len(results['ids'][0]) > 0:
+            if results and results['ids'] and results['ids'][0]:
+                ids = results['ids'][0]
+                texts = results['documents'][0] if results['documents'] else []
+                metadatas = results['metadatas'][0] if results['metadatas'] else []
+                distances = results['distances'][0] if results['distances'] else []
+                
+                logger.info(f"\n📊 ChromaDB 原始结果:")
+                logger.info(f"   返回文档数: {len(ids)}")
+                logger.info(f"   距离值: {distances}")
                 logger.info(f"\n   详细结果:")
                 
-                for i in range(len(results['ids'][0])):
-                    distance = results['distances'][0][i]
-                    
-                    # ⭐⭐⭐ 修复：使用更宽松的相似度计算 ⭐⭐⭐
-                    # 方案1: 直接使用距离的倒数（距离越小，相似度越高）
-                    # similarity = 1.0 / (1.0 + distance)
-                    
-                    # 方案2: 归一化到 [0, 1] 区间（假设距离范围 0-2）
-                    similarity = max(0, 1.0 - (distance / 2.0))
+                for i, (doc_id, text, metadata, distance) in enumerate(zip(ids, texts, metadatas, distances)):
+                    # 计算相似度（余弦距离转相似度）
+                    similarity = 1 - (distance / 2)
                     
                     logger.info(f"\n   结果 {i+1}:")
-                    logger.info(f"      ID: {results['ids'][0][i]}")
+                    logger.info(f"      ID: {doc_id}")
                     logger.info(f"      距离: {distance:.4f}")
                     logger.info(f"      相似度: {similarity:.4f}")
-                    logger.info(f"      是否通过阈值: {similarity >= Config.SIMILARITY_THRESHOLD}")
-                    logger.info(f"      内容预览: {results['documents'][0][i][:100]}...")
+                    logger.info(f"      是否通过阈值: {similarity >= threshold}")
+                    logger.info(f"      内容预览: {text[:80] if text else 'N/A'}...")
                     
-                    doc = {
-                        'id': results['ids'][0][i],
-                        'text': results['documents'][0][i],
-                        'metadata': results['metadatas'][0][i],
-                        'score': round(similarity, 4),
-                        'distance': round(distance, 4)
-                    }
+                    # ⭐⭐⭐ 关键：确保 metadata 中有 chunk_id ⭐⭐⭐
+                    chunk_id = metadata.get('chunk_id') if metadata else None
+                    logger.info(f"      chunk_id: {chunk_id}")
                     
-                    documents.append(doc)
+                    documents.append({
+                        'id': doc_id,
+                        'text': text,
+                        'score': similarity,
+                        'metadata': metadata or {},
+                        'chunk_id': chunk_id  # ⭐⭐⭐ 直接放在顶层，方便访问 ⭐⭐⭐
+                    })
+                
+                logger.info(f"{'='*60}\n")
             
-            logger.info(f"{'=' * 60}\n")
-            
-            # 4. 过滤低相似度结果
-            filtered = [
-                doc for doc in documents 
-                if doc['score'] >= Config.SIMILARITY_THRESHOLD
-            ]
-            
-            logger.info(f"🔍 检索到 {len(filtered)} 条相关文档（阈值 >= {Config.SIMILARITY_THRESHOLD}）")
+            # 按相似度过滤
+            filtered = [doc for doc in documents if doc['score'] >= threshold]
+            logger.info(f"🔍 检索到 {len(filtered)} 条相关文档（阈值 >= {threshold}）")
             
             return filtered
-        
+            
         except Exception as e:
             logger.error(f"❌ 检索失败: {e}")
             import traceback

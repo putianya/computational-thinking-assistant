@@ -14,6 +14,12 @@ export const useChatStore = defineStore("chat", () => {
 
   const sessionId = ref(null);
 
+  // ⭐⭐⭐ 新增：中断标志 ⭐⭐⭐
+  const shouldAbortStream = ref(false);
+
+  // ⭐⭐⭐ 新增：暂停期间的缓冲队列 ⭐⭐⭐
+  const pendingChunks = ref([]); // 存储暂停期间收到的chunk
+
   // ========== 计算属性 ==========
 
   // 对话轮数 = 消息数 / 2
@@ -299,6 +305,10 @@ export const useChatStore = defineStore("chat", () => {
       console.log(`💬 发送消息: ${message}`);
       console.log(`📍 当前会话: ${sessionId.value}`);
 
+      // ⭐ 重置状态
+      shouldAbortStream.value = false;
+      pendingChunks.value = []; // ⭐ 清空缓冲队列
+
       // 1. 立即添加用户消息到界面
       const userMessage = {
         id: Date.now(),
@@ -309,7 +319,7 @@ export const useChatStore = defineStore("chat", () => {
       messages.value.push(userMessage);
 
       // 2. 添加 AI 消息占位符
-      const aiMessageIndex = messages.value.length; // ⭐ 记录索引
+      const aiMessageIndex = messages.value.length;
       const aiMessage = {
         id: Date.now() + 1,
         role: "assistant",
@@ -327,45 +337,113 @@ export const useChatStore = defineStore("chat", () => {
         message,
         sessionId.value,
         null,
-
-        // ⭐⭐⭐ onChunk：每收到一块内容，立即更新 ⭐⭐⭐
         (chunk) => {
-          currentReply.value += chunk;
-          // ⭐ 直接修改数组中的对象，触发响应式更新
-          messages.value[aiMessageIndex].content = currentReply.value;
-        },
-
-        // onDone：流式结束
-        async (newSessionId) => {
-          console.log(`✅ 流式输出完成，会话ID: ${newSessionId}`);
-
-          // ⭐⭐⭐ 如果是新创建的会话，需要重新加载会话列表 ⭐⭐⭐
-          if (newSessionId && newSessionId !== sessionId.value) {
-            sessionId.value = newSessionId;
-            console.log(`📍 更新会话ID: ${newSessionId}`);
-
-            // ⭐ 重新加载会话列表，显示新创建的会话
-            console.log("🔄 重新加载会话列表...");
-            await loadSessions();
-            console.log("✅ 会话列表已更新");
+          // ⭐⭐⭐ 修改：根据暂停状态决定处理方式 ⭐⭐⭐
+          if (shouldAbortStream.value) {
+            // 暂停模式：将chunk存入缓冲队列
+            console.log(
+              `📦 chunk已缓冲（队列长度: ${pendingChunks.value.length + 1}）`,
+            );
+            pendingChunks.value.push(chunk);
+            return;
           }
 
+          // ⭐ 检查消息索引是否仍然有效
+          if (aiMessageIndex >= messages.value.length) {
+            console.warn("⚠️ 消息索引失效，停止更新UI");
+            shouldAbortStream.value = true;
+            return;
+          }
+
+          // ⭐ 检查消息类型是否正确
+          if (messages.value[aiMessageIndex].role !== "assistant") {
+            console.warn("⚠️ 消息类型不匹配，停止更新UI");
+            shouldAbortStream.value = true;
+            return;
+          }
+
+          // ✅ 正常模式：实时更新UI
+          currentReply.value += chunk;
+          messages.value[aiMessageIndex].content = currentReply.value;
+        },
+        async (newSessionId, fullContent) => {
+          // ⭐⭐⭐ onDone: 即使暂停也执行完成逻辑 ⭐⭐⭐
+          console.log("✅ 流式输出完成（后端）");
+          console.log(
+            `📊 完整内容长度: ${fullContent?.length || currentReply.value.length}`,
+          );
+
+          // ⭐ 如果是暂停状态，使用后端传来的完整内容
+          if (shouldAbortStream.value && fullContent) {
+            console.log("🔄 当前是暂停状态，使用后端完整内容");
+
+            // 计算已显示的内容长度
+            const displayedLength = currentReply.value.length;
+
+            // 提取未显示的部分
+            const remainingContent = fullContent.substring(displayedLength);
+
+            if (remainingContent) {
+              console.log(`📦 未显示内容长度: ${remainingContent.length}`);
+
+              // ⭐⭐⭐ 将剩余内容拆分成chunk存入缓冲队列 ⭐⭐⭐
+              const chunkSize = 5; // 每个chunk 5个字符
+              for (let i = 0; i < remainingContent.length; i += chunkSize) {
+                pendingChunks.value.push(
+                  remainingContent.substring(i, i + chunkSize),
+                );
+              }
+
+              console.log(
+                `📦 缓冲队列已填充: ${pendingChunks.value.length} 个chunk`,
+              );
+            }
+
+            // ⭐ 确保消息对象存在且使用完整内容
+            if (aiMessageIndex < messages.value.length) {
+              messages.value[aiMessageIndex].content = fullContent;
+            }
+          }
+
+          // 重置状态
+          isStreaming.value = false;
+          shouldAbortStream.value = false;
+
+          // 处理会话ID更新
+          if (newSessionId && newSessionId !== sessionId.value) {
+            console.log(`📍 会话ID更新: ${sessionId.value} -> ${newSessionId}`);
+            sessionId.value = newSessionId;
+
+            await loadSessions();
+
+            const newSession = sessions.value.find(
+              (s) => s.session_id === newSessionId,
+            );
+            if (newSession) {
+              currentSession.value = newSession;
+            }
+          }
+        },
+        (error) => {
+          // onError
+          console.error("❌ 流式输出错误:", error);
           isStreaming.value = false;
           currentReply.value = "";
-        },
+          shouldAbortStream.value = false;
+          pendingChunks.value = []; // ⭐ 清空缓冲队列
 
-        // onError：错误处理
-        (error) => {
-          console.error("❌ 流式输出错误:", error);
-          messages.value[aiMessageIndex].content =
-            `抱歉，发生错误：${error.message}`;
-          isStreaming.value = false;
+          if (aiMessageIndex < messages.value.length) {
+            messages.value[aiMessageIndex].content =
+              "抱歉，回复时出现错误，请重试。";
+          }
         },
       );
     } catch (error) {
       console.error("❌ 发送消息失败:", error);
       isStreaming.value = false;
       currentReply.value = "";
+      shouldAbortStream.value = false;
+      pendingChunks.value = []; // ⭐ 清空缓冲队列
       throw error;
     }
   }
@@ -436,6 +514,215 @@ export const useChatStore = defineStore("chat", () => {
     console.log("✅ 聊天 Store 已重置");
   }
 
+  // frontend/src/stores/chat.js
+
+  // ⭐⭐⭐ 修复：只中断前端渲染，不中断后端流式输出 ⭐⭐⭐
+  function abortCurrentStream() {
+    console.log("🛑 中断前端流式显示（后端继续运行）");
+
+    // ⭐ 只设置前端标志，不中断网络请求
+    shouldAbortStream.value = true;
+    // ⚠️ 不清空 currentReply，保留已显示的内容
+    console.log("✅ 已显示内容保留:", currentReply.value.substring(0, 50));
+    console.log("📦 开启缓冲队列，后续chunk将存入队列");
+  }
+
+  // ⭐⭐⭐ 新增：恢复流式显示（追赶进度）⭐⭐⭐
+  function resumeStream() {
+    if (!shouldAbortStream.value) {
+      console.log("⚠️ 流式输出未暂停，无需恢复");
+      return;
+    }
+
+    console.log("▶️ 恢复流式显示");
+    console.log(`📦 缓冲队列中有 ${pendingChunks.value.length} 个待渲染chunk`);
+
+    shouldAbortStream.value = false;
+
+    // ⭐⭐⭐ 快速追赶：逐个渲染缓冲的chunk ⭐⭐⭐
+    if (pendingChunks.value.length > 0) {
+      console.log("🚀 开始追赶进度...");
+
+      let chunkIndex = 0;
+      const catchUpInterval = setInterval(() => {
+        if (chunkIndex >= pendingChunks.value.length) {
+          clearInterval(catchUpInterval);
+          console.log("✅ 进度追上，恢复实时流式输出");
+          pendingChunks.value = []; // 清空缓冲队列
+          return;
+        }
+
+        // 逐个渲染缓冲的chunk（速度可调）
+        const chunk = pendingChunks.value[chunkIndex];
+        currentReply.value += chunk;
+
+        // 更新对应的消息
+        const aiMessageIndex = messages.value.length - 1;
+        if (
+          aiMessageIndex >= 0 &&
+          messages.value[aiMessageIndex].role === "assistant"
+        ) {
+          messages.value[aiMessageIndex].content = currentReply.value;
+        }
+
+        chunkIndex++;
+      }, 10); // ⭐ 每10ms渲染一个chunk（快速追赶）
+    } else {
+      console.log("✅ 无缓冲内容，直接恢复实时输出");
+    }
+  }
+
+  // ⭐⭐⭐ 修改：sendMessageStream 方法 ⭐⭐⭐
+  async function sendMessageStream(message) {
+    if (!message.trim()) return;
+
+    try {
+      console.log(`💬 发送消息: ${message}`);
+      console.log(`📍 当前会话: ${sessionId.value}`);
+
+      // ⭐ 重置状态
+      shouldAbortStream.value = false;
+      pendingChunks.value = []; // ⭐ 清空缓冲队列
+
+      // 1. 立即添加用户消息到界面
+      const userMessage = {
+        id: Date.now(),
+        role: "user",
+        content: message,
+        created_at: new Date().toISOString(),
+      };
+      messages.value.push(userMessage);
+
+      // 2. 添加 AI 消息占位符
+      const aiMessageIndex = messages.value.length;
+      const aiMessage = {
+        id: Date.now() + 1,
+        role: "assistant",
+        content: "",
+        created_at: new Date().toISOString(),
+      };
+      messages.value.push(aiMessage);
+
+      // 3. 设置流式状态
+      isStreaming.value = true;
+      currentReply.value = "";
+
+      // 4. 调用 API（流式输出）
+      await chatAPI.sendMessageStream(
+        message,
+        sessionId.value,
+        null,
+        (chunk) => {
+          // ⭐⭐⭐ 修改：根据暂停状态决定处理方式 ⭐⭐⭐
+          if (shouldAbortStream.value) {
+            // 暂停模式：将chunk存入缓冲队列
+            console.log(
+              `📦 chunk已缓冲（队列长度: ${pendingChunks.value.length + 1}）`,
+            );
+            pendingChunks.value.push(chunk);
+            return;
+          }
+
+          // ⭐ 检查消息索引是否仍然有效
+          if (aiMessageIndex >= messages.value.length) {
+            console.warn("⚠️ 消息索引失效，停止更新UI");
+            shouldAbortStream.value = true;
+            return;
+          }
+
+          // ⭐ 检查消息类型是否正确
+          if (messages.value[aiMessageIndex].role !== "assistant") {
+            console.warn("⚠️ 消息类型不匹配，停止更新UI");
+            shouldAbortStream.value = true;
+            return;
+          }
+
+          // ✅ 正常模式：实时更新UI
+          currentReply.value += chunk;
+          messages.value[aiMessageIndex].content = currentReply.value;
+        },
+        async (newSessionId, fullContent) => {
+          // ⭐⭐⭐ onDone: 即使暂停也执行完成逻辑 ⭐⭐⭐
+          console.log("✅ 流式输出完成（后端）");
+          console.log(
+            `📊 完整内容长度: ${fullContent?.length || currentReply.value.length}`,
+          );
+
+          // ⭐ 如果是暂停状态，使用后端传来的完整内容
+          if (shouldAbortStream.value && fullContent) {
+            console.log("🔄 当前是暂停状态，使用后端完整内容");
+
+            // 计算已显示的内容长度
+            const displayedLength = currentReply.value.length;
+
+            // 提取未显示的部分
+            const remainingContent = fullContent.substring(displayedLength);
+
+            if (remainingContent) {
+              console.log(`📦 未显示内容长度: ${remainingContent.length}`);
+
+              // ⭐⭐⭐ 将剩余内容拆分成chunk存入缓冲队列 ⭐⭐⭐
+              const chunkSize = 5; // 每个chunk 5个字符
+              for (let i = 0; i < remainingContent.length; i += chunkSize) {
+                pendingChunks.value.push(
+                  remainingContent.substring(i, i + chunkSize),
+                );
+              }
+
+              console.log(
+                `📦 缓冲队列已填充: ${pendingChunks.value.length} 个chunk`,
+              );
+            }
+
+            // ⭐ 确保消息对象存在且使用完整内容
+            if (aiMessageIndex < messages.value.length) {
+              messages.value[aiMessageIndex].content = fullContent;
+            }
+          }
+
+          // 重置状态
+          isStreaming.value = false;
+          shouldAbortStream.value = false;
+
+          // 处理会话ID更新
+          if (newSessionId && newSessionId !== sessionId.value) {
+            console.log(`📍 会话ID更新: ${sessionId.value} -> ${newSessionId}`);
+            sessionId.value = newSessionId;
+
+            await loadSessions();
+
+            const newSession = sessions.value.find(
+              (s) => s.session_id === newSessionId,
+            );
+            if (newSession) {
+              currentSession.value = newSession;
+            }
+          }
+        },
+        (error) => {
+          // onError
+          console.error("❌ 流式输出错误:", error);
+          isStreaming.value = false;
+          currentReply.value = "";
+          shouldAbortStream.value = false;
+          pendingChunks.value = []; // ⭐ 清空缓冲队列
+
+          if (aiMessageIndex < messages.value.length) {
+            messages.value[aiMessageIndex].content =
+              "抱歉，回复时出现错误，请重试。";
+          }
+        },
+      );
+    } catch (error) {
+      console.error("❌ 发送消息失败:", error);
+      isStreaming.value = false;
+      currentReply.value = "";
+      shouldAbortStream.value = false;
+      pendingChunks.value = []; // ⭐ 清空缓冲队列
+      throw error;
+    }
+  }
+
   // ========== 导出 ==========
   return {
     // 状态
@@ -446,6 +733,7 @@ export const useChatStore = defineStore("chat", () => {
     currentReply,
     sessionId,
     isLoadingSessions,
+    shouldAbortStream, // ⭐⭐⭐ 添加这一行！⭐⭐⭐
 
     // 计算属性
     currentContextLength,
@@ -464,5 +752,8 @@ export const useChatStore = defineStore("chat", () => {
     continueLastMessage,
     clearContext,
     resetStore,
+    abortCurrentStream, // ⭐ 确保这个也导出了
+    resumeStream,
+    pendingChunks,
   };
 });

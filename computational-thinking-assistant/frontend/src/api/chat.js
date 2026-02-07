@@ -80,14 +80,18 @@ export const chatAPI = {
 
       let newSessionId = sessionId;
       let buffer = "";
-      let firstChunkReceived = false; // ⭐⭐⭐ 修复：使用驼峰命名 ⭐⭐⭐
+      let firstChunkReceived = false;
       const startTime = Date.now();
+
+      // ⭐⭐⭐ 新增：累积所有内容（即使前端不显示）⭐⭐⭐
+      let accumulatedContent = "";
 
       while (true) {
         const { done, value } = await reader.read();
 
         if (done) {
           console.log("📥 流式读取完成");
+          console.log(`📊 后端总共生成: ${accumulatedContent.length} 字符`);
           break;
         }
 
@@ -106,7 +110,6 @@ export const chatAPI = {
           try {
             const data = JSON.parse(jsonStr);
 
-            // ⭐⭐⭐ 修复：变量名改为 firstChunkReceived ⭐⭐⭐
             if (!firstChunkReceived && data.type === "content") {
               firstChunkReceived = true;
               const latency = Date.now() - startTime;
@@ -120,15 +123,26 @@ export const chatAPI = {
                 break;
 
               case "content":
-                if (data.content && onChunk) {
-                  onChunk(data.content);
+                if (data.content) {
+                  // ⭐ 始终累积内容（后台记录）
+                  accumulatedContent += data.content;
+
+                  // ⭐ 只有在有回调时才调用（前端可能已切走）
+                  if (onChunk) {
+                    onChunk(data.content);
+                  }
                 }
                 break;
 
               case "done":
                 console.log("✅ 服务器发送完成信号");
+                console.log(
+                  `📊 完整回答长度: ${accumulatedContent.length} 字符`,
+                );
+
                 if (onDone) {
-                  onDone(newSessionId);
+                  // ⭐ 传递完整内容给 onDone
+                  onDone(newSessionId, accumulatedContent);
                 }
                 return;
 
@@ -140,14 +154,14 @@ export const chatAPI = {
                 return;
             }
           } catch (parseError) {
-            // ⭐⭐⭐ 这个警告现在应该不会出现了 ⭐⭐⭐
             console.warn("⚠️ JSON 解析失败:", jsonStr, parseError);
           }
         }
       }
 
       if (onDone) {
-        onDone(newSessionId);
+        // ⭐ 即使没有明确的 done 信号，也传递完整内容
+        onDone(newSessionId, accumulatedContent);
       }
     } catch (error) {
       console.error("❌ 流式请求失败:", error);

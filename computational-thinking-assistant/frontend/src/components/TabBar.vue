@@ -4,7 +4,7 @@
       v-for="tab in tabs"
       :key="tab.id"
       :class="['tab-item', { active: activeTab === tab.id }]"
-      @click="$emit('switch', tab.id)"
+      @click="handleTabSwitch(tab.id)"
     >
       <i :class="tab.icon"></i>
       <span class="tab-label">{{ tab.label }}</span>
@@ -13,7 +13,10 @@
 </template>
 
 <script setup>
-defineProps({
+import { useChatStore } from "../stores/chat";
+
+// ⭐⭐⭐ 保留原有的 props 定义 ⭐⭐⭐
+const props = defineProps({
   tabs: {
     type: Array,
     required: true,
@@ -25,7 +28,31 @@ defineProps({
   },
 });
 
-defineEmits(["switch"]);
+// ⭐⭐⭐ 保留原有的 emit 定义 ⭐⭐⭐
+const emit = defineEmits(["switch"]);
+
+// ⭐⭐⭐ 新增：获取 chat store ⭐⭐⭐
+const chatStore = useChatStore();
+
+// ⭐⭐⭐ 新增：处理标签切换 ⭐⭐⭐
+function handleTabSwitch(tabId) {
+  if (tabId === props.activeTab) return;
+
+  console.log("📑 切换标签:", props.activeTab, "→", tabId);
+
+  // 区分切走和切回
+  if (props.activeTab === "chat" && chatStore.isStreaming) {
+    // 从对话切走：暂停UI更新
+    console.log("⏸️ 从对话切走，暂停流式显示");
+    chatStore.abortCurrentStream();
+  } else if (tabId === "chat" && chatStore.isStreaming) {
+    // 切回对话：恢复UI更新，追赶进度
+    console.log("▶️ 切回对话，恢复流式显示");
+    chatStore.resumeStream();
+  }
+
+  emit("switch", tabId);
+}
 </script>
 
 <style scoped>
@@ -50,7 +77,7 @@ defineEmits(["switch"]);
   font-weight: 500;
   color: #666;
   position: relative;
-  top: 2px; /* 与底部边框对齐 */
+  top: 2px;
 }
 
 .tab-item:hover {
@@ -68,7 +95,6 @@ defineEmits(["switch"]);
   font-size: 18px;
 }
 
-/* 响应式 */
 @media (max-width: 768px) {
   .tab-bar {
     overflow-x: auto;
@@ -82,7 +108,7 @@ defineEmits(["switch"]);
   }
 
   .tab-label {
-    display: none; /* 移动端隐藏文字，只显示图标 */
+    display: none;
   }
 }
 </style>

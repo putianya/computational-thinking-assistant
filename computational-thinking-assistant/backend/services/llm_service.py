@@ -14,7 +14,7 @@ from models.knowledge_chunk import KnowledgeChunk
 class LLMService:
     """LLM 服务类"""
     
-    # ⭐⭐⭐ 新增：RAG 置信度阈值配置 ⭐⭐⭐
+    # ⭐⭐⭐ RAG 置信度阈值配置 ⭐⭐⭐
     RAG_HIGH_CONFIDENCE = 0.80    # 高置信度阈值
     RAG_MEDIUM_CONFIDENCE = 0.60  # 中置信度阈值
     RAG_MIN_RESULTS = 1           # 最少需要的结果数
@@ -44,11 +44,10 @@ class LLMService:
     def chat_stream(self, user_message, session_id=None, max_context=None):
         """流式对话生成器"""
         
-        # ⭐⭐⭐ 记录总开始时间 ⭐⭐⭐
         total_start_time = time.time()
         
         try:
-            # 1. 保存用户消息（异步会更好，但先同步处理）
+            # 1. 保存用户消息
             save_start = time.time()
             if session_id:
                 ChatService.save_message(session_id, 'user', user_message)
@@ -66,26 +65,22 @@ class LLMService:
             
             print(f"🧠 构建上下文: {len(messages)} 条消息")
             
-            # 3. 动态 max_tokens（快速判断，不需要再次分类）
-            # ⭐⭐⭐ 优化：使用简单规则而不是重复分类 ⭐⭐⭐
+            # 3. 动态 max_tokens
             msg_lower = user_message.lower().strip()
-            
-            # 简单的闲聊检测
             chat_keywords = ['你好', '谢谢', '再见', '天气', '你是谁', '好的', '嗯', 'ok', 'hi', 'hello']
             is_simple_chat = any(kw in msg_lower for kw in chat_keywords) and len(user_message) < 20
             
             if is_simple_chat:
-                max_tokens = 300  # 闲聊用更少的 tokens
+                max_tokens = 300
                 print(f"📏 简单闲聊模式: max_tokens={max_tokens}")
             else:
                 max_tokens = Config.MAX_TOKENS
                 print(f"📏 标准模式: max_tokens={max_tokens}")
             
-            # ⭐⭐⭐ 4. 记录预处理总耗时 ⭐⭐⭐
             preprocess_time = time.time() - total_start_time
             print(f"⏱️ 预处理总耗时: {preprocess_time:.2f}秒")
             
-            # 5. 调用 OpenAI API
+            # 4. 调用 OpenAI API
             api_start_time = time.time()
             
             stream = self.client.chat.completions.create(
@@ -100,7 +95,7 @@ class LLMService:
             full_response = ""
             first_chunk = True
             
-            # 6. 流式生成
+            # 5. 流式生成
             for chunk in stream:
                 if chunk.choices and len(chunk.choices) > 0:
                     delta = chunk.choices[0].delta
@@ -117,7 +112,7 @@ class LLMService:
                         full_response += content
                         yield content
             
-            # 7. 保存 AI 回复
+            # 6. 保存 AI 回复
             if session_id and full_response:
                 ChatService.save_message(
                     session_id, 
@@ -137,12 +132,11 @@ class LLMService:
     def _build_messages(self, user_message, session_id):
         """
         构建消息列表（智能降级版）
-        
-        降级策略：
-        - 高置信度 (>=0.8): 强制使用知识库，必须引用
-        - 中置信度 (0.6-0.8): 参考知识库，可选引用
-        - 低置信度 (<0.6): 普通模式，告知无相关内容
         """
+        print("\n" + "=" * 60)
+        print(f"🔍 【消息构建】步骤")
+        print("=" * 60)
+        
         try:
             # ========== 1. 检测"继续"指令 ==========
             continue_keywords = ['继续', 'continue', '接着写', '接下去', '往下说', '还有呢', '然后呢']
@@ -153,8 +147,7 @@ class LLMService:
                 context = []
                 if session_id:
                     context = ChatService.get_context_for_ai(session_id)
-                messages = self._build_continue_messages(user_message, context)
-                return self._build_continue_messages(user_message, context) 
+                return self._build_continue_messages(user_message, context)
             
             # ========== 2. 问题分类 ==========
             classify_start = time.time()
@@ -169,8 +162,9 @@ class LLMService:
             
             # ========== 3. 向量检索（如果需要）==========
             search_results = []
-            rag_mode = 'none'  # ⭐ 新增：记录 RAG 模式
+            rag_mode = 'none'
             max_score = 0.0
+            referenced_chunks = []  # ⭐⭐⭐ 记录引用的知识块 ID ⭐⭐⭐
             
             if needs_rag:
                 search_start = time.time()
@@ -185,14 +179,38 @@ class LLMService:
                 
                 print(f"🔍 检索耗时: {time.time() - search_start:.2f}s, 原始结果: {len(raw_results)}条")
                 
-                # ⭐⭐⭐ 新增：分析检索质量 ⭐⭐⭐
+                # ⭐⭐⭐ 分析检索质量并提取 chunk_id ⭐⭐⭐
                 if raw_results:
                     max_score = max(doc.get('score', 0) for doc in raw_results)
+                    print(f"   检索到 {len(raw_results)} 个结果")
+                    print(f"   最高相似度: {max_score:.3f}")
+                    
+                    # ⭐⭐⭐ 提取有效的 chunk_id ⭐⭐⭐
+                    chunk_ids_to_update = []
+                    for doc in raw_results:
+                        metadata = doc.get('metadata', {})
+                        chunk_id = metadata.get('chunk_id')
+                        
+                        if chunk_id:
+                            chunk_ids_to_update.append(chunk_id)
+                            print(f"   ✅ 找到知识块 chunk_id={chunk_id}, score={doc.get('score', 0):.3f}")
+                        else:
+                            print(f"   ⚠️ 知识块缺少 chunk_id: vector_id={doc.get('id')}")
+                    
+                    # ⭐⭐⭐ 批量更新引用计数 ⭐⭐⭐
+                    if chunk_ids_to_update:
+                        try:
+                            KnowledgeChunk.batch_increment_retrieved(chunk_ids_to_update)
+                            print(f"   📊 已更新 {len(chunk_ids_to_update)} 个知识块的引用计数")
+                            referenced_chunks = chunk_ids_to_update  # 记录下来
+                        except Exception as e:
+                            print(f"   ⚠️ 更新引用计数失败: {e}")
+                    else:
+                        print(f"   ⚠️ 未找到有效的 chunk_id，无法更新引用计数")
                     
                     # 根据最高分确定 RAG 模式
                     if max_score >= self.RAG_HIGH_CONFIDENCE:
                         rag_mode = 'high'
-                        # 高置信度：只保留高分结果
                         search_results = [
                             doc for doc in raw_results 
                             if doc.get('score', 0) >= self.RAG_MEDIUM_CONFIDENCE
@@ -201,7 +219,6 @@ class LLMService:
                         
                     elif max_score >= self.RAG_MEDIUM_CONFIDENCE:
                         rag_mode = 'medium'
-                        # 中置信度：保留所有及格结果
                         search_results = [
                             doc for doc in raw_results 
                             if doc.get('score', 0) >= self.RAG_MEDIUM_CONFIDENCE
@@ -218,48 +235,27 @@ class LLMService:
             else:
                 print(f"⏭️ 跳过RAG检索: {skip_reason}")
             
-            # ========== 4. 更新知识块热度 ==========
-            referenced_chunks = []
-            if search_results:
-                chunk_ids = []
-                for doc in search_results:
-                    # 尝试获取数据库 ID
-                    db_id = doc.get('metadata', {}).get('db_id')
-                    if db_id:
-                        chunk_ids.append(db_id)
-                        referenced_chunks.append(db_id)
-                
-                if chunk_ids:
-                    try:
-                        KnowledgeChunk.batch_increment_retrieved(chunk_ids)
-                        print(f"📊 更新热度: {len(chunk_ids)}个知识块")
-                    except Exception as e:
-                        print(f"⚠️ 更新热度失败: {e}")
-            
-            # ========== 5. 获取历史上下文 ==========
+            # ========== 4. 获取历史上下文 ==========
             context_start = time.time()
             context = []
             if session_id:
                 context = ChatService.get_context_for_ai(session_id)
             print(f"📚 上下文: {len(context)}条消息")
             
-            # ========== 6. 根据 RAG 模式构建消息 ⭐⭐⭐ ==========
+            # ========== 5. 根据 RAG 模式构建消息 ==========
             if rag_mode == 'high':
-                # 高置信度：强制使用知识库
                 messages = self._build_high_confidence_rag_messages(
                     user_message, search_results, context, max_score
                 )
                 print("📝 使用【高置信度RAG】模式")
                 
             elif rag_mode == 'medium':
-                # 中置信度：参考知识库
                 messages = self._build_medium_confidence_rag_messages(
                     user_message, search_results, context, max_score
                 )
                 print("📝 使用【中置信度RAG】模式")
                 
             else:
-                # 低置信度/无结果：普通模式
                 messages = self._build_fallback_messages(
                     user_message, context, needs_rag, max_score
                 )
@@ -273,19 +269,11 @@ class LLMService:
             traceback.print_exc()
             return None, []
     
-    # ⭐⭐⭐ 新增：高置信度 RAG 消息构建 ⭐⭐⭐
+    # ⭐⭐⭐ 高置信度 RAG 消息构建 ⭐⭐⭐
     def _build_high_confidence_rag_messages(self, user_message, knowledge_results, context, max_score):
-        """
-        构建高置信度 RAG 消息
-        
-        特点：
-        - 强制要求 AI 使用知识库内容
-        - 必须标注引用来源
-        - 不允许编造内容
-        """
+        """构建高置信度 RAG 消息"""
         messages = []
         
-        # 1. 高置信度系统提示词
         high_confidence_prompt = f'''{Config.RAG_SYSTEM_PROMPT}
 
 【重要提示】
@@ -303,18 +291,15 @@ class LLMService:
             "content": high_confidence_prompt
         })
         
-        # 2. 注入知识库内容
         knowledge_context = self._format_knowledge_detailed(knowledge_results)
         messages.append({
             "role": "system",
             "content": f"【课程知识库内容】\n{knowledge_context}"
         })
         
-        # 3. 历史对话
         if context:
             messages.extend(context)
         
-        # 4. 当前问题
         messages.append({
             "role": "user",
             "content": user_message
@@ -322,19 +307,11 @@ class LLMService:
         
         return messages
     
-    # ⭐⭐⭐ 新增：中置信度 RAG 消息构建 ⭐⭐⭐
+    # ⭐⭐⭐ 中置信度 RAG 消息构建 ⭐⭐⭐
     def _build_medium_confidence_rag_messages(self, user_message, knowledge_results, context, max_score):
-        """
-        构建中置信度 RAG 消息
-        
-        特点：
-        - 建议 AI 参考知识库内容
-        - 可选择性引用
-        - 允许结合自身知识补充
-        """
+        """构建中置信度 RAG 消息"""
         messages = []
         
-        # 1. 中置信度系统提示词
         medium_confidence_prompt = f'''{Config.RAG_SYSTEM_PROMPT}
 
 【参考提示】
@@ -352,18 +329,15 @@ class LLMService:
             "content": medium_confidence_prompt
         })
         
-        # 2. 注入知识库内容（标注为参考）
         knowledge_context = self._format_knowledge_detailed(knowledge_results)
         messages.append({
             "role": "system",
             "content": f"【可参考的知识库内容】\n{knowledge_context}\n\n注：以上内容仅供参考，请根据问题实际需要选择使用。"
         })
         
-        # 3. 历史对话
         if context:
             messages.extend(context)
         
-        # 4. 当前问题
         messages.append({
             "role": "user",
             "content": user_message
@@ -371,21 +345,12 @@ class LLMService:
         
         return messages
     
-    # ⭐⭐⭐ 新增：低置信度/普通模式消息构建 ⭐⭐⭐
+    # ⭐⭐⭐ 低置信度/普通模式消息构建 ⭐⭐⭐
     def _build_fallback_messages(self, user_message, context, tried_rag, max_score):
-        """
-        构建普通模式消息（知识库无相关内容时）
-        
-        特点：
-        - 使用 AI 的通用知识回答
-        - 如果尝试过 RAG 但失败，告知学生
-        - 保持专业助教角色
-        """
+        """构建普通模式消息"""
         messages = []
         
-        # 1. 根据是否尝试过 RAG 选择提示词
         if tried_rag and max_score > 0:
-            # 尝试过但相似度太低
             fallback_prompt = f'''{Config.SYSTEM_PROMPT}
 
 【提示】
@@ -398,7 +363,6 @@ class LLMService:
 4. 鼓励学生参考教材或咨询老师获取更权威的答案
 '''
         elif tried_rag:
-            # 尝试过但完全没结果
             fallback_prompt = f'''{Config.SYSTEM_PROMPT}
 
 【提示】
@@ -410,7 +374,6 @@ class LLMService:
 3. 保持计算思维课程助教的角色定位
 '''
         else:
-            # 没尝试 RAG（闲聊等场景）
             fallback_prompt = Config.SYSTEM_PROMPT
         
         messages.append({
@@ -418,11 +381,9 @@ class LLMService:
             "content": fallback_prompt
         })
         
-        # 2. 历史对话
         if context:
             messages.extend(context)
         
-        # 3. 当前问题
         messages.append({
             "role": "user",
             "content": user_message
@@ -430,11 +391,9 @@ class LLMService:
         
         return messages
     
-    # ⭐⭐⭐ 新增：详细格式化知识库内容 ⭐⭐⭐
+    # ⭐⭐⭐ 详细格式化知识库内容 ⭐⭐⭐
     def _format_knowledge_detailed(self, knowledge_results):
-        """
-        详细格式化知识库内容（包含相似度和来源）
-        """
+        """详细格式化知识库内容"""
         if not knowledge_results:
             return "（未找到相关知识）"
         
@@ -446,8 +405,8 @@ class LLMService:
             
             source = metadata.get('source', '未知来源')
             chapter = metadata.get('chapter', '')
+            chunk_id = metadata.get('chunk_id', 'N/A')
             
-            # 根据相似度添加可信度标识
             if score >= 0.85:
                 confidence_tag = "⭐高度相关"
             elif score >= 0.75:
@@ -460,33 +419,18 @@ class LLMService:
                 f"来源: {source}\n"
                 f"章节: {chapter}\n"
                 f"相似度: {score:.1%}\n"
+                f"知识块ID: {chunk_id}\n"
                 f"内容:\n{text}\n"
                 f"{'─' * 40}"
             )
         
         return "\n\n".join(formatted)
     
-    # 批量更新热度（性能更好）
-    def batch_increment_retrieved(self, chunk_ids):
-        """批量更新热度"""
-        if chunk_ids:
-            KnowledgeChunk.batch_increment_retrieved(chunk_ids)
-
-
-
-    # ⭐⭐⭐ 新增：处理"继续"指令的消息构建 ⭐⭐⭐
+    # ⭐⭐⭐ 处理"继续"指令的消息构建 ⭐⭐⭐
     def _build_continue_messages(self, user_message, context):
-        """
-        构建"继续"指令的消息列表
-        
-        特点：
-        - 不执行 RAG 检索（延续上一次回答）
-        - 使用完整历史上下文
-        - 明确告诉 AI 这是续写请求
-        """
+        """构建"继续"指令的消息列表"""
         messages = []
         
-        # 1. 系统提示词（简化版，无需知识库）
         continue_prompt = f'''{Config.SYSTEM_PROMPT}
 
 【续写模式】
@@ -501,7 +445,6 @@ class LLMService:
             "content": continue_prompt
         })
         
-        # 2. 加载历史对话（全部上下文）
         if context:
             for msg in context:
                 messages.append({
@@ -509,7 +452,6 @@ class LLMService:
                     "content": msg['content']
                 })
         
-        # 3. 当前"继续"指令
         messages.append({
             "role": "user",
             "content": user_message
@@ -517,4 +459,4 @@ class LLMService:
         
         print(f"📝 构建续写消息: {len(messages)} 条（包含 {len(context)} 条历史）")
         
-        return messages, []  # 返回 (messages, referenced_chunks)，续写模式无引用
+        return messages, []  # 返回 (messages, referenced_chunks)

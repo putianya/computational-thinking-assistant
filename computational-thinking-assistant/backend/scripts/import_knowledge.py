@@ -420,8 +420,10 @@ def import_to_vector_db(chunks):
     """
     导入知识块到 ChromaDB
     
+    ⭐⭐⭐ 新流程：使用已有的 chunk_id 添加到向量 metadata ⭐⭐⭐
+    
     Args:
-        chunks: 知识块列表
+        chunks: 知识块列表（必须已包含 chunk_id）
         
     Returns:
         dict: 导入结果
@@ -434,38 +436,49 @@ def import_to_vector_db(chunks):
         }
     
     print("\n" + "=" * 60)
-    print("📤 导入到向量数据库...")
+    print("🧠 生成向量并关联 chunk_id")
     print("=" * 60)
     
     # 获取向量服务
     vector_service = get_vector_service()
     
-    # ⭐⭐⭐ 修复：构建正确的文档格式 ⭐⭐⭐
-    # add_documents 期望的格式是 List[Dict]，每个 Dict 包含：
-    # - content: 文档内容
-    # - source: 来源文件
-    # - chapter: 章节名
-    # - section: 小节名（可选）
-    # - level: 标题层级
-    
+    # 构建文档格式
     documents = []
-    for chunk in chunks:
+    for i, chunk in enumerate(chunks):
         doc = {
             'content': chunk['content'],
             'source': chunk.get('source', 'unknown'),
             'chapter': chunk.get('chapter', '未分类'),
-            'section': chunk.get('section') or '',  # ⭐ None 转为空字符串
-            'level': chunk.get('level', 2)
+            'section': chunk.get('section') or '',
+            'level': chunk.get('level', 2),
+            'chunk_id': chunk.get('chunk_id')  # ⭐⭐⭐ 传入 chunk_id ⭐⭐⭐
         }
+        
         documents.append(doc)
+        
+        # 打印前几条的 chunk_id
+        if i < 3:
+            print(f"   [{i+1}] chunk_id={chunk.get('chunk_id')}, chapter={chunk.get('chapter', '')[:30]}")
     
     # 调用向量服务的 add_documents 方法
     result = vector_service.add_documents(documents)
     
     if result['success']:
-        print(f"✅ 向量数据库导入成功: {result['added_count']} 个块")
+        print(f"\n✅ 向量生成成功: {result['added_count']} 个")
+
+        # ⭐⭐⭐ 将 vector_id 存回 chunks ⭐⭐⭐
+        if 'vector_ids' in result:
+            for i, vector_id in enumerate(result['vector_ids']):
+                if i < len(chunks):
+                    chunks[i]['vector_id'] = vector_id
+                    
+                    # 打印前几条的关联结果
+                    if i < 3:
+                        print(f"   [{i+1}] chunk_id={chunks[i].get('chunk_id')} -> vector_id={vector_id}")
     else:
-        print(f"❌ 向量数据库导入失败: {result['message']}")
+        print(f"❌ 向量生成失败: {result['message']}")
+    
+    print("=" * 60)
     
     return result
 
@@ -476,7 +489,7 @@ def sync_to_database(chunks, vector_service):
     """
     同步知识块到 SQLite 数据库
     
-    ⚠️⚠️⚠️ 修复：确保在应用上下文中执行 ⚠️⚠️⚠️
+    ⭐⭐⭐ 新流程：先插入数据库获得 chunk_id，再存入 chunks ⭐⭐⭐
     """
     try:
         from models.knowledge_chunk import KnowledgeChunk
@@ -485,7 +498,11 @@ def sync_to_database(chunks, vector_service):
         inserted_count = 0
         skipped_count = 0
         
-        for chunk in chunks:
+        print("\n" + "=" * 60)
+        print("💾 同步到数据库（获取 chunk_id）")
+        print("=" * 60)
+        
+        for i, chunk in enumerate(chunks):
             # ⭐⭐⭐ 1. 生成 content_hash ⭐⭐⭐
             content_hash = hashlib.md5(chunk['content'].encode()).hexdigest()
             
@@ -495,34 +512,45 @@ def sync_to_database(chunks, vector_service):
             ).first()
             
             if existing:
-                print(f"⚠️  跳过重复知识块: {chunk['chapter']} (ID: {existing.id})")
+                print(f"   [{i+1}/{len(chunks)}] ⚠️  跳过重复: {chunk['chapter'][:30]}... (ID: {existing.id})")
                 skipped_count += 1
+                # ⭐ 即使跳过也要记录 chunk_id（用于引用）
+                chunk['chunk_id'] = existing.id
+                chunk['vector_id'] = existing.vector_id or chunk.get('vector_id')
                 continue
             
             # ⭐⭐⭐ 3. 提取关键词 ⭐⭐⭐
             keywords = extract_keywords(chunk['content'])
             
-            # ⭐⭐⭐ 4. 创建知识块记录（确保设置 content_hash）⭐⭐⭐
+            # ⭐⭐⭐ 4. 创建知识块记录（不设置 vector_id，稍后更新）⭐⭐⭐
             kb_chunk = KnowledgeChunk(
                 content=chunk['content'],
-                content_hash=content_hash,  # ⭐⭐⭐ 必须设置！⭐⭐⭐
+                content_hash=content_hash,
                 source=chunk['source'],
-                chapter=chunk.get('chapter'),
-                section=chunk.get('section'),
+                chapter=chunk.get('chapter') or '未分类',
+                section=chunk.get('section') or '',
                 keywords=keywords,
                 level=chunk.get('level', 2),
-                vector_id=chunk.get('vector_id'),  # ⭐ 使用 vector_service 生成的 ID
-                embedding_model='text-embedding-ada-002',
+                vector_id=None,  # ⭐ 先不设置，等生成后再更新
+                embedding_model='paraphrase-multilingual-MiniLM-L12-v2',
                 char_count=len(chunk['content']),
                 word_count=len(chunk['content'].split())
             )
             
             db.session.add(kb_chunk)
+            db.session.flush()  # ⭐⭐⭐ 立即获取自增 ID ⭐⭐⭐
+            
+            # ⭐⭐⭐ 5. 将数据库 ID 存入 chunk ⭐⭐⭐
+            chunk['chunk_id'] = kb_chunk.id
+            
+            print(f"   [{i+1}/{len(chunks)}] ✅ ID={kb_chunk.id}: {chunk['chapter'][:30]}...")
+            
             inserted_count += 1
         
         db.session.commit()
         
-        print(f"✅ 数据库同步完成: 新增 {inserted_count} 个，跳过 {skipped_count} 个重复")
+        print(f"\n✅ 数据库同步完成: 新增 {inserted_count} 个，跳过 {skipped_count} 个重复")
+        print("=" * 60)
         
         return inserted_count
         
@@ -531,11 +559,9 @@ def sync_to_database(chunks, vector_service):
         import traceback
         traceback.print_exc()
         
-        # ⭐⭐⭐ 修复：只在上下文存在时才 rollback ⭐⭐⭐
         try:
             db.session.rollback()
         except RuntimeError as re:
-            # 如果上下文不存在，打印警告但不中断
             print(f"⚠️  无法回滚事务（上下文已退出）: {re}")
         
         return 0
@@ -597,7 +623,7 @@ def extract_keywords(content):
                 unique_keywords.append(kw)
                 seen.add(kw)
         
-        result = ','.join(unique_keywords[:10])  # 最多保留 10 个
+        result = ','.join(unique_keywords[:10])
         
         return result
         
@@ -609,7 +635,16 @@ def extract_keywords(content):
 # ========== 主函数 ==========
 
 def import_knowledge():
-    """主函数：导入知识库"""
+    """
+    主函数：导入知识库
+    
+    ⭐⭐⭐ 新流程：
+    1. 读取文件并分块
+    2. 先插入数据库（获得 chunk_id）
+    3. 再生成向量（携带 chunk_id）
+    4. 最后回写 vector_id 到数据库
+    ⭐⭐⭐
+    """
     print("=" * 60)
     print("🚀 开始导入知识库")
     print("=" * 60)
@@ -627,14 +662,14 @@ def import_knowledge():
         print(f"❌ 知识库目录不存在: {knowledge_dir}")
         return
     
-    # 1. 读取文件
+    # ========== 步骤 1：读取文件 ==========
     markdown_files = load_markdown_files(knowledge_dir)
     
     if not markdown_files:
         print("❌ 没有找到 Markdown 文件")
         return
     
-    # 2. 分块处理
+    # ========== 步骤 2：分块处理 ==========
     all_chunks = []
     
     for file_path, content in markdown_files:
@@ -648,38 +683,44 @@ def import_knowledge():
     
     print(f"\n📊 总计: {len(all_chunks)} 个知识块")
     
-    # 3. 导入到向量数据库
-    result = import_to_vector_db(all_chunks)
-    
-    if not result['success']:
-        print(f"❌ 向量数据库导入失败: {result['message']}")
-        return
-    
-    # ⭐⭐⭐ 4. 修复：确保在应用上下文中同步数据库 ⭐⭐⭐
+    # ⭐⭐⭐ 步骤 3：先同步到数据库（获得 chunk_id）⭐⭐⭐
+    inserted_count = 0
     try:
         with app.app_context():
-            print("\n📥 同步到数据库...")
-            inserted_count = sync_to_database(all_chunks, get_vector_service())
+            vector_service = get_vector_service()
             
-            if inserted_count > 0:
-                print(f"✅ 成功同步 {inserted_count} 个知识块到数据库")
-            else:
-                print("⚠️  没有新知识块被同步")
+            # 3.1 插入数据库，获得 chunk_id
+            inserted_count = sync_to_database(all_chunks, vector_service)
+            
+            if inserted_count == 0:
+                print("⚠️  没有新知识块需要导入（可能全部重复）")
+                return
+            
+            # ⭐⭐⭐ 步骤 4：生成向量（携带 chunk_id）⭐⭐⭐
+            result = import_to_vector_db(all_chunks)
+            
+            if not result['success']:
+                print(f"❌ 向量生成失败: {result['message']}")
+                return
+            
+            # ⭐⭐⭐ 步骤 5：回写 vector_id 到数据库 ⭐⭐⭐
+            update_vector_metadata(all_chunks, vector_service)
+            
     except Exception as e:
-        print(f"❌ 数据库同步过程出错: {e}")
+        print(f"❌ 导入过程出错: {e}")
         import traceback
         traceback.print_exc()
         return
     
-    # 5. 打印汇总
+    # ========== 步骤 6：打印汇总 ==========
     print("\n" + "=" * 60)
     print("✅ 导入完成")
     print("=" * 60)
     print(f"📊 统计:")
     print(f"   文件数: {len(markdown_files)}")
     print(f"   知识块总数: {len(all_chunks)}")
-    print(f"   向量数据库: {result['added_count']} 个")
-    print(f"   SQLite 数据库: {inserted_count} 个")
+    print(f"   新增数据库记录: {inserted_count}")
+    print(f"   生成向量: {len([c for c in all_chunks if c.get('vector_id')])}")
     print("=" * 60)
 
 
@@ -709,22 +750,20 @@ if __name__ == '__main__':
     # 执行导入
     import_knowledge()
 
-# # ⭐⭐⭐ 在文件末尾添加可导入的函数 ⭐⭐⭐
+
+# ⭐⭐⭐ 在文件末尾添加可导入的函数 ⭐⭐⭐
 
 def import_single_file(file_path: Path) -> dict:
     """
     导入单个 Markdown 文件到知识库
     
+    ⭐⭐⭐ 新流程：先数据库后向量 ⭐⭐⭐
+    
     Args:
         file_path: 文件路径
         
     Returns:
-        dict: {
-            'success': bool,
-            'message': str,
-            'chunks_count': int,
-            'file_name': str
-        }
+        dict: 导入结果
     """
     try:
         print(f"\n{'='*60}")
@@ -765,7 +804,19 @@ def import_single_file(file_path: Path) -> dict:
         
         print(f"✅ 分块完成: {len(chunks)} 个知识块")
         
-        # 4. 导入到向量数据库
+        # ⭐⭐⭐ 4. 先同步到数据库（获得 chunk_id）⭐⭐⭐
+        vector_service = get_vector_service()
+        inserted_count = sync_to_database(chunks, vector_service)
+        
+        if inserted_count == 0:
+            return {
+                'success': False,
+                'message': '所有内容已存在（未导入新记录）',
+                'chunks_count': 0,
+                'file_name': file_path.name
+            }
+        
+        # ⭐⭐⭐ 5. 生成向量（携带 chunk_id）⭐⭐⭐
         vector_result = import_to_vector_db(chunks)
         
         if not vector_result['success']:
@@ -775,29 +826,24 @@ def import_single_file(file_path: Path) -> dict:
                 'chunks_count': 0,
                 'file_name': file_path.name
             }
-
-    
         
-    #      # ⭐⭐⭐ 修复：获取 vector_service 并传递给 sync_to_database ⭐⭐⭐
-    #     from services.vector_service import get_vector_service
-    #     vector_service = get_vector_service()
-    # #     # 5. 同步到数据库
-    #     inserted_count = sync_to_database(chunks,vector_service)
+        # ⭐⭐⭐ 6. 回写 vector_id 到数据库 ⭐⭐⭐
+        update_vector_metadata(chunks, vector_service)
         
-    #     print(f"✅ 导入成功: {file_path.name}")
-    #     print(f"   知识块数: {len(chunks)}")
-    #     print(f"   向量数: {vector_result['count']}")
-    #     print(f"   数据库记录: {inserted_count}")
-    #     print(f"{'='*60}\n")
+        print(f"✅ 导入成功: {file_path.name}")
+        print(f"   知识块数: {len(chunks)}")
+        print(f"   新增记录: {inserted_count}")
+        print(f"   生成向量: {vector_result['added_count']}")
+        print(f"{'='*60}\n")
         
-    #     return {
-    #         'success': True,
-    #         'message': '导入成功',
-    #         'chunks_count': len(chunks),
-    #         'vector_count': vector_result['count'],
-    #         'db_count': inserted_count,
-    #         'file_name': file_path.name
-    #     }
+        return {
+            'success': True,
+            'message': '导入成功',
+            'chunks_count': len(chunks),
+            'vector_count': vector_result['added_count'],
+            'db_count': inserted_count,
+            'file_name': file_path.name
+        }
         
     except Exception as e:
         print(f"❌ 导入失败: {e}")
@@ -808,3 +854,56 @@ def import_single_file(file_path: Path) -> dict:
             'chunks_count': 0,
             'file_name': file_path.name if file_path else 'unknown'
         }
+
+def update_vector_metadata(chunks, vector_service):
+    """
+    ⭐⭐⭐ 修改：不再更新向量 metadata（已在生成时添加），而是回写 vector_id 到数据库 ⭐⭐⭐
+    
+    Args:
+        chunks: 包含 chunk_id 和 vector_id 的知识块列表
+        vector_service: 向量服务实例
+    """
+    print("\n" + "=" * 60)
+    print("🔗 更新数据库记录的 vector_id")
+    print("=" * 60)
+    
+    updated_count = 0
+    
+    for i, chunk in enumerate(chunks):
+        chunk_id = chunk.get('chunk_id')
+        vector_id = chunk.get('vector_id')
+        
+        if not chunk_id or not vector_id:
+            print(f"   [{i+1}/{len(chunks)}] ⚠️ 缺少 chunk_id 或 vector_id，跳过")
+            continue
+        
+        try:
+            # ⭐⭐⭐ 更新数据库中的 vector_id ⭐⭐⭐
+            kb_chunk = KnowledgeChunk.query.get(chunk_id)
+            
+            if not kb_chunk:
+                print(f"   [{i+1}/{len(chunks)}] ⚠️ chunk_id={chunk_id} 不存在")
+                continue
+            
+            kb_chunk.vector_id = vector_id
+            
+            updated_count += 1
+            
+            # 打印前几条
+            if i < 3:
+                print(f"   [{i+1}/{len(chunks)}] ✅ chunk_id={chunk_id} 已设置 vector_id={vector_id}")
+            
+        except Exception as e:
+            print(f"   [{i+1}/{len(chunks)}] ❌ 更新失败: {e}")
+    
+    # 提交所有更新
+    try:
+        db.session.commit()
+        print(f"\n✅ vector_id 更新完成: {updated_count}/{len(chunks)} 条记录")
+    except Exception as e:
+        print(f"\n❌ 提交失败: {e}")
+        db.session.rollback()
+    
+    print("=" * 60)
+    
+    return updated_count
