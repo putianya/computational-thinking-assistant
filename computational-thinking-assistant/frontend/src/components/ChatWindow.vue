@@ -20,6 +20,7 @@ import { useAuthStore } from "../stores/user";
 import TabBar from "./TabBar.vue";
 import ChatView from "./ChatView.vue";
 import KnowledgeBase from "./KnowledgeBase.vue";
+import CodeAnalyzer from "./CodeAnalyzer.vue"; // ⭐ 添加这行
 import UserManagement from "./UserManagement.vue";
 
 const authStore = useAuthStore();
@@ -33,6 +34,13 @@ const availableTabs = computed(() => {
       label: "对话",
       icon: "fas fa-comments",
       component: ChatView,
+    },
+    // ⭐ 添加代码分析标签（所有登录用户可用）
+    {
+      id: "code",
+      label: "代码分析",
+      icon: "fas fa-code",
+      component: CodeAnalyzer,
     },
   ];
 
@@ -78,16 +86,11 @@ function handleTabSwitch(tabId) {
   flex-direction: column;
   height: 100vh;
   background: #f5f7fa;
-  overflow: hidden; /* ⭐ 关键：防止整体滚动 */
+  overflow: hidden;
 }
 
 .content-area {
   flex: 1;
-  overflow: hidden; /* ⭐ 关键：让子组件自己处理滚动 */
+  overflow: hidden;
 }
-
-/* ⭐⭐⭐ 确保 Font Awesome 图标可用 ⭐⭐⭐ */
-/* 如果图标不显示，在 index.html 中添加：
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
-*/
 </style>

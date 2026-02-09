@@ -3,7 +3,8 @@ import { useAuthStore } from "../stores/user";
 
 const Login = () => import("../components/Login.vue");
 const Register = () => import("../components/Register.vue");
-const ChatWindow = () => import("../components/ChatWindow.vue"); // ⭐ 现在是标签页容器
+const ChatWindow = () => import("../components/ChatWindow.vue");
+const CodeAnalyzer = () => import("../components/CodeAnalyzer.vue"); // ⭐ 新增：代码分析器
 
 const routes = [
   {
@@ -24,6 +25,13 @@ const routes = [
     name: "Home",
     component: ChatWindow, // ⭐ 包含标签栏 + 动态内容
     meta: { requiresAuth: true },
+  },
+  // ⭐⭐⭐ 新增：代码分析器 ⭐⭐⭐
+  {
+    path: "/code-analyzer",
+    name: "CodeAnalyzer",
+    component: CodeAnalyzer,
+    meta: { requiresAuth: true }, // 需要登录
   },
 ];
 

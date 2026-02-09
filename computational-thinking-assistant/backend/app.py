@@ -52,6 +52,7 @@ CORS(app, resources={
 
 # 全局服务实例
 llm_service = None
+code_service = None  # ⭐ 添加代码服务全局变量
 
 def get_llm_service():
     """懒加载 LLM 服务"""
@@ -60,6 +61,19 @@ def get_llm_service():
         from services.llm_service import LLMService
         llm_service = LLMService()
     return llm_service
+
+# ⭐ 添加：懒加载代码服务
+def get_code_service():
+    """懒加载代码分析服务"""
+    global code_service
+    if code_service is None:
+        from services.code_service import CodeService
+        from services.vector_service import get_vector_service
+        
+        llm = get_llm_service()
+        vector = get_vector_service()
+        code_service = CodeService(llm, vector)
+    return code_service
 
 # ⭐ 应用启动信息
 if os.environ.get('WERKZEUG_RUN_MAIN') == 'true':
@@ -1578,7 +1592,134 @@ def delete_user(user_id):
             'message': f'删除用户失败: {str(e)}'
         }), 500
 
-# ...existing code...
+@app.route('/api/code/analyze', methods=['POST'])
+@login_required
+def analyze_code():
+    """
+    代码分析 API
+    
+    权限：需要登录
+    
+    请求格式：
+    {
+        "code": "int main() { ... }",
+        "analysis_type": "full"  // 可选：'syntax' | 'logic' | 'full'，默认 'full'
+    }
+    
+    返回格式：
+    {
+        "status": "success",
+        "data": {
+            "success": true,
+            "analysis_type": "full",
+            "code": "...",
+            "features": {
+                "lines": 10,
+                "functions": ["main"],
+                "complexity": "low"
+            },
+            "syntax_check": {
+                "valid": true
+            },
+            "ai_analysis": {
+                "problems": [],
+                "suggestions": [],
+                "summary": "..."
+            },
+            "score": 85,
+            "level": "B",
+            "suggestions": [...]
+        }
+    }
+    """
+    try:
+        print(f"\n{'='*60}")
+        print(f"🔍 收到代码分析请求")
+        print(f"   用户ID: {g.user_id}")
+        
+        # 1. 获取请求数据
+        data = request.get_json()
+        
+        if not data:
+            return jsonify({
+                'status': 'error',
+                'message': '请提供请求数据'
+            }), 400
+        
+        code = data.get('code', '').strip()
+        analysis_type = data.get('analysis_type', 'full')
+        
+        print(f"   分析类型: {analysis_type}")
+        print(f"   代码长度: {len(code)} 字符")
+        
+        # 2. 验证数据
+        if not code:
+            print(f"❌ 代码为空")
+            print(f"{'='*60}\n")
+            return jsonify({
+                'status': 'error',
+                'message': '代码不能为空'
+            }), 400
+        
+        # 验证分析类型
+        valid_types = ['syntax', 'logic', 'full']
+        if analysis_type not in valid_types:
+            print(f"❌ 无效的分析类型: {analysis_type}")
+            print(f"{'='*60}\n")
+            return jsonify({
+                'status': 'error',
+                'message': f'无效的分析类型，可选值: {", ".join(valid_types)}'
+            }), 400
+        
+        # 限制代码长度（防止滥用）
+        max_code_length = 10000  # 10K 字符
+        if len(code) > max_code_length:
+            print(f"❌ 代码过长: {len(code)} > {max_code_length}")
+            print(f"{'='*60}\n")
+            return jsonify({
+                'status': 'error',
+                'message': f'代码长度不能超过 {max_code_length} 字符'
+            }), 400
+        
+        # 3. 调用 Service
+        print(f"🚀 开始分析...")
+        service = get_code_service()
+        result = service.analyze_code(code, analysis_type)
+        
+        # 4. 检查分析结果
+        if not result.get('success', False):
+            error_msg = result.get('error', '分析失败')
+            print(f"❌ 分析失败: {error_msg}")
+            print(f"{'='*60}\n")
+            return jsonify({
+                'status': 'error',
+                'message': error_msg,
+                'data': result
+            }), 500
+        
+        # 5. 返回结果
+        print(f"✅ 分析完成")
+        print(f"   评分: {result.get('score', 0)}")
+        print(f"   等级: {result.get('level', 'N/A')}")
+        print(f"   问题数: {len(result.get('ai_analysis', {}).get('problems', []))}")
+        print(f"{'='*60}\n")
+        
+        return jsonify({
+            'status': 'success',
+            'message': '代码分析完成',
+            'data': result
+        }), 200
+        
+    except Exception as e:
+        print(f"❌ 代码分析异常: {e}")
+        import traceback
+        traceback.print_exc()
+        print(f"{'='*60}\n")
+        
+        return jsonify({
+            'status': 'error',
+            'message': f'代码分析失败: {str(e)}'
+        }), 500
 
 @app.errorhandler(404)
 def not_found(error):

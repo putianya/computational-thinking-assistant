@@ -4,6 +4,27 @@
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "/api";
 
+/**
+ * ⭐ 新增：获取存储的 Token
+ */
+export function getToken() {
+  return localStorage.getItem("token");
+}
+
+/**
+ * ⭐ 新增：设置 Token
+ */
+export function setToken(token) {
+  localStorage.setItem("token", token);
+}
+
+/**
+ * ⭐ 新增：移除 Token
+ */
+export function removeToken() {
+  localStorage.removeItem("token");
+}
+
 export const authAPI = {
   /**
    * 用户登录
