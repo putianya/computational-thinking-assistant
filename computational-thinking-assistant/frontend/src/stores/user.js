@@ -5,7 +5,6 @@ import { useChatStore } from "./chat";
 
 // ⭐ 改回 useAuthStore
 export const useAuthStore = defineStore("user", () => {
-  // ← 这里改
   // ========== 状态 ==========
   const isLoggedIn = ref(false);
   const user = ref(null);
@@ -174,7 +173,17 @@ export const useAuthStore = defineStore("user", () => {
     user.value = null;
     token.value = null;
 
+    // ⭐ 清除认证相关的 localStorage
     localStorage.removeItem("token");
+    localStorage.removeItem("user");
+
+    // ⭐⭐⭐ 新增：清除代码分析相关的 localStorage ⭐⭐⭐
+    localStorage.removeItem("code_analyzer_draft");
+    localStorage.removeItem("code_analysis_type");
+    localStorage.removeItem("code_analysis_result");
+    localStorage.removeItem("code_chat_history");
+
+    console.log("🗑️ 已清除代码分析数据");
 
     // ⭐ 重置聊天 Store
     const chatStore = useChatStore();

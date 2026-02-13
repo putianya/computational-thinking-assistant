@@ -4,12 +4,72 @@
   box-sizing: border-box;
 }
 
+/* ⭐ 新增: 根字体大小自适应 */
+:root {
+  /* 基准字体大小 */
+  --base-font-size: clamp(14px, 1vw, 16px);
+  
+  /* 间距比例 */
+  --spacing-xs: clamp(4px, 0.5vw, 8px);
+  --spacing-sm: clamp(8px, 1vw, 12px);
+  --spacing-md: clamp(12px, 1.5vw, 16px);
+  --spacing-lg: clamp(16px, 2vw, 24px);
+  --spacing-xl: clamp(20px, 2.5vw, 32px);
+  
+  /* 容器最大宽度 */
+  --container-max-width: 1400px;
+}
+
+html {
+  font-size: var(--base-font-size);
+}
+
 body {
   font-family: "Segoe UI", "Microsoft YaHei", Arial, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  /* ⭐ 添加最小宽度,防止过度压缩 */
+  min-width: 320px;
 }
 
 #app {
   height: 100vh;
+  /* ⭐ 防止水平滚动条 */
+  overflow-x: hidden;
+}
+
+/* ⭐ 新增: 全局容器样式 */
+.container {
+  max-width: var(--container-max-width);
+  margin: 0 auto;
+  padding: 0 var(--spacing-md);
+}
+
+/* ⭐ 新增: 全局响应式断点 */
+@media (max-width: 1920px) {
+  :root {
+    --base-font-size: 15px;
+  }
+}
+
+@media (max-width: 1440px) {
+  :root {
+    --base-font-size: 14px;
+  }
+}
+
+@media (max-width: 1024px) {
+  :root {
+    --base-font-size: 13px;
+    --spacing-lg: 12px;
+    --spacing-xl: 16px;
+  }
+}
+
+@media (max-width: 768px) {
+  :root {
+    --base-font-size: 12px;
+    --spacing-md: 8px;
+    --spacing-lg: 10px;
+  }
 }

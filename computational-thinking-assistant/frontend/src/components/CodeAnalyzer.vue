@@ -1,6 +1,6 @@
 <template>
   <div class="code-analyzer">
-    <!-- 左侧：代码编辑区 -->
+    <!-- 左侧：代码编辑器（保持不变）-->
     <div class="editor-panel">
       <div class="editor-header">
         <h3>📝 C语言代码编辑器</h3>
@@ -32,7 +32,7 @@
         </div>
       </div>
 
-      <!-- ⭐ 新增：草稿提示 -->
+      <!-- ⭐ 草稿提示 -->
       <div v-if="hasDraft" class="draft-notice">
         <i class="fas fa-save"></i>
         草稿已自动保存
@@ -74,211 +74,271 @@ int main() {
       </div>
     </div>
 
-    <!-- 右侧：分析结果 -->
+    <!-- 右侧：分析结果 + 聊天区域 -->
     <div class="result-panel">
-      <!-- 空状态 -->
-      <div v-if="!analysisResult" class="empty-state">
-        <div class="empty-icon">🔍</div>
-        <h3>等待分析</h3>
-        <p>在左侧输入代码后点击"分析代码"按钮</p>
-      </div>
-
-      <!-- 分析结果 -->
-      <div v-else class="analysis-result">
-        <!-- 评分卡片 -->
-        <div class="score-card" :class="`level-${analysisResult.level || 'F'}`">
-          <div class="score-value">{{ analysisResult.score || 0 }}</div>
-          <div class="score-label">
-            <span class="score-level">{{
-              getLevelText(analysisResult.level)
-            }}</span>
-            <span class="score-desc">综合评分</span>
-          </div>
+      <!-- 上半部分：分析结果（保持不变）-->
+      <div class="analysis-result-wrapper">
+        <!-- 空状态 -->
+        <div v-if="!analysisResult" class="empty-state">
+          <div class="empty-icon">🔍</div>
+          <h3>等待分析</h3>
+          <p>在左侧输入代码后点击"分析代码"按钮</p>
         </div>
 
-        <!-- 代码特征 -->
-        <div class="section" v-if="analysisResult.features">
-          <h4><i class="fas fa-info-circle"></i> 代码特征</h4>
-          <div class="feature-grid">
-            <div class="feature-item">
-              <span class="feature-label">代码行数</span>
-              <span class="feature-value">{{
-                analysisResult.features.lines
+        <!-- 分析结果 -->
+        <div v-else class="analysis-result">
+          <!-- 评分卡片 -->
+          <div
+            class="score-card"
+            :class="`level-${analysisResult.level || 'F'}`"
+          >
+            <div class="score-value">{{ analysisResult.score || 0 }}</div>
+            <div class="score-label">
+              <span class="score-level">{{
+                getLevelText(analysisResult.level)
               }}</span>
+              <span class="score-desc">综合评分</span>
             </div>
-            <div class="feature-item">
-              <span class="feature-label">字符数</span>
-              <span class="feature-value">{{
-                analysisResult.features.chars
-              }}</span>
+          </div>
+
+          <!-- 代码特征 -->
+          <div class="section" v-if="analysisResult.features">
+            <h4><i class="fas fa-info-circle"></i> 代码特征</h4>
+            <div class="feature-grid">
+              <div class="feature-item">
+                <span class="feature-label">代码行数</span>
+                <span class="feature-value">{{
+                  analysisResult.features.lines
+                }}</span>
+              </div>
+              <div class="feature-item">
+                <span class="feature-label">字符数</span>
+                <span class="feature-value">{{
+                  analysisResult.features.chars
+                }}</span>
+              </div>
+              <div class="feature-item">
+                <span class="feature-label">复杂度</span>
+                <span
+                  class="feature-value complexity"
+                  :class="analysisResult.features.complexity"
+                >
+                  {{ getComplexityText(analysisResult.features.complexity) }}
+                </span>
+              </div>
+              <div class="feature-item">
+                <span class="feature-label">包含main函数</span>
+                <span class="feature-value">
+                  {{ analysisResult.features.has_main ? "✅ 是" : "❌ 否" }}
+                </span>
+              </div>
             </div>
-            <div class="feature-item">
-              <span class="feature-label">复杂度</span>
-              <span
-                class="feature-value complexity"
-                :class="analysisResult.features.complexity"
+
+            <!-- 详细特征 -->
+            <div class="feature-details">
+              <div
+                v-if="
+                  analysisResult.features.includes &&
+                  analysisResult.features.includes.length > 0
+                "
               >
-                {{ getComplexityText(analysisResult.features.complexity) }}
-              </span>
-            </div>
-            <div class="feature-item">
-              <span class="feature-label">包含main函数</span>
-              <span class="feature-value">
-                {{ analysisResult.features.has_main ? "✅ 是" : "❌ 否" }}
-              </span>
+                <strong>头文件：</strong>
+                <code>{{ analysisResult.features.includes.join(", ") }}</code>
+              </div>
+              <div
+                v-if="
+                  analysisResult.features.functions &&
+                  analysisResult.features.functions.length > 0
+                "
+              >
+                <strong>函数：</strong>
+                <code>{{ analysisResult.features.functions.join(", ") }}</code>
+              </div>
+              <div v-if="analysisResult.features.keywords">
+                <strong>控制结构：</strong>
+                if({{ analysisResult.features.keywords.if }}) for({{
+                  analysisResult.features.keywords.for
+                }}) while({{ analysisResult.features.keywords.while }})
+                switch({{ analysisResult.features.keywords.switch }})
+              </div>
             </div>
           </div>
 
-          <!-- 详细特征 -->
-          <div class="feature-details">
+          <!-- 语法检查结果 -->
+          <div class="section" v-if="analysisResult.syntax_check">
+            <h4>
+              <i
+                class="fas fa-check-circle"
+                v-if="analysisResult.syntax_check.valid"
+              ></i>
+              <i class="fas fa-times-circle" v-else></i>
+              语法检查
+            </h4>
             <div
-              v-if="
-                analysisResult.features.includes &&
-                analysisResult.features.includes.length > 0
-              "
-            >
-              <strong>头文件：</strong>
-              <code>{{ analysisResult.features.includes.join(", ") }}</code>
-            </div>
-            <div
-              v-if="
-                analysisResult.features.functions &&
-                analysisResult.features.functions.length > 0
-              "
-            >
-              <strong>函数：</strong>
-              <code>{{ analysisResult.features.functions.join(", ") }}</code>
-            </div>
-            <div v-if="analysisResult.features.keywords">
-              <strong>控制结构：</strong>
-              if({{ analysisResult.features.keywords.if }}) for({{
-                analysisResult.features.keywords.for
-              }}) while({{ analysisResult.features.keywords.while }}) switch({{
-                analysisResult.features.keywords.switch
-              }})
-            </div>
-          </div>
-        </div>
-
-        <!-- 语法检查结果 -->
-        <div class="section" v-if="analysisResult.syntax_check">
-          <h4>
-            <i
-              class="fas fa-check-circle"
               v-if="analysisResult.syntax_check.valid"
-            ></i>
-            <i class="fas fa-times-circle" v-else></i>
-            语法检查
-          </h4>
-          <div v-if="analysisResult.syntax_check.valid" class="success-message">
-            ✅ 语法正确，无错误
-          </div>
-          <div v-else class="error-list">
-            <div
-              v-for="(error, index) in analysisResult.syntax_check.errors"
-              :key="index"
-              class="error-item"
+              class="success-message"
             >
-              <strong>第 {{ error.line }} 行：</strong> {{ error.message }}
+              ✅ 语法正确，无错误
             </div>
-          </div>
-        </div>
-
-        <!-- AI分析结果 -->
-        <div
-          class="section"
-          v-if="
-            analysisResult.ai_analysis && analysisResult.ai_analysis.success
-          "
-        >
-          <h4><i class="fas fa-brain"></i> AI 深度分析</h4>
-
-          <!-- 问题列表 -->
-          <div
-            v-if="
-              analysisResult.ai_analysis.problems &&
-              analysisResult.ai_analysis.problems.length > 0
-            "
-            class="problems-list"
-          >
-            <h5>🔴 发现的问题</h5>
-            <div
-              v-for="(problem, index) in analysisResult.ai_analysis.problems"
-              :key="index"
-              class="problem-item"
-              :class="problem.severity"
-            >
-              <span class="problem-badge">{{
-                problem.severity === "error" ? "严重" : "警告"
-              }}</span>
-              <span class="problem-text">{{ problem.description }}</span>
+            <div v-else class="error-list">
+              <div
+                v-for="(error, index) in analysisResult.syntax_check.errors"
+                :key="index"
+                class="error-item"
+              >
+                <strong>第 {{ error.line }} 行：</strong> {{ error.message }}
+              </div>
             </div>
           </div>
 
-          <!-- 改进建议 -->
+          <!-- AI分析结果 -->
           <div
+            class="section"
             v-if="
-              analysisResult.ai_analysis.suggestions &&
-              analysisResult.ai_analysis.suggestions.length > 0
+              analysisResult.ai_analysis && analysisResult.ai_analysis.success
             "
-            class="suggestions-list"
           >
-            <h5>💡 改进建议</h5>
-            <ul>
+            <h4><i class="fas fa-brain"></i> AI 深度分析</h4>
+
+            <!-- 问题列表 -->
+            <div
+              v-if="
+                analysisResult.ai_analysis.problems &&
+                analysisResult.ai_analysis.problems.length > 0
+              "
+              class="problems-list"
+            >
+              <h5>🔴 发现的问题</h5>
+              <div
+                v-for="(problem, index) in analysisResult.ai_analysis.problems"
+                :key="index"
+                class="problem-item"
+                :class="problem.severity"
+              >
+                <span class="problem-badge">{{
+                  problem.severity === "error" ? "严重" : "警告"
+                }}</span>
+                <span class="problem-text">{{ problem.description }}</span>
+              </div>
+            </div>
+
+            <!-- 改进建议 -->
+            <div
+              v-if="
+                analysisResult.ai_analysis.suggestions &&
+                analysisResult.ai_analysis.suggestions.length > 0
+              "
+              class="suggestions-list"
+            >
+              <h5>💡 改进建议</h5>
+              <ul>
+                <li
+                  v-for="(suggestion, index) in analysisResult.ai_analysis
+                    .suggestions"
+                  :key="index"
+                >
+                  {{ suggestion }}
+                </li>
+              </ul>
+            </div>
+
+            <!-- 总结 -->
+            <div v-if="analysisResult.ai_analysis.summary" class="summary">
+              <h5>📋 总结</h5>
+              <p>{{ analysisResult.ai_analysis.summary }}</p>
+            </div>
+
+            <!-- 使用的知识库 -->
+            <div
+              v-if="
+                analysisResult.ai_analysis.knowledge_used &&
+                analysisResult.ai_analysis.knowledge_used.length > 0
+              "
+              class="knowledge-sources"
+            >
+              <h5>📚 参考资料</h5>
+              <div class="source-tags">
+                <span
+                  v-for="(source, index) in analysisResult.ai_analysis
+                    .knowledge_used"
+                  :key="index"
+                  class="source-tag"
+                >
+                  {{ source }}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <!-- 综合建议 -->
+          <div
+            class="section"
+            v-if="
+              analysisResult.suggestions &&
+              analysisResult.suggestions.length > 0
+            "
+          >
+            <h4><i class="fas fa-lightbulb"></i> 综合建议</h4>
+            <ul class="suggestions-list">
               <li
-                v-for="(suggestion, index) in analysisResult.ai_analysis
-                  .suggestions"
+                v-for="(suggestion, index) in analysisResult.suggestions"
                 :key="index"
               >
                 {{ suggestion }}
               </li>
             </ul>
           </div>
+        </div>
+      </div>
 
-          <!-- 总结 -->
-          <div v-if="analysisResult.ai_analysis.summary" class="summary">
-            <h5>📋 总结</h5>
-            <p>{{ analysisResult.ai_analysis.summary }}</p>
+      <!-- ⭐⭐⭐ 下半部分：聊天区域（使用 ChatMessage 组件）⭐⭐⭐ -->
+      <div class="code-chat-section">
+        <!-- 聊天消息列表 -->
+        <div class="chat-messages" ref="chatMessagesRef">
+          <!-- 空状态提示 -->
+          <div v-if="chatHistory.length === 0" class="chat-empty">
+            <i class="fas fa-comments"></i>
+            <p v-if="!analysisResult">💡 先分析代码，然后可以提问</p>
+            <p v-else>💬 你可以对代码提问，例如："第5行为什么会出错？"</p>
           </div>
 
-          <!-- 使用的知识库 -->
-          <div
-            v-if="
-              analysisResult.ai_analysis.knowledge_used &&
-              analysisResult.ai_analysis.knowledge_used.length > 0
-            "
-            class="knowledge-sources"
-          >
-            <h5>📚 参考资料</h5>
-            <div class="source-tags">
-              <span
-                v-for="(source, index) in analysisResult.ai_analysis
-                  .knowledge_used"
-                :key="index"
-                class="source-tag"
-              >
-                {{ source }}
-              </span>
-            </div>
-          </div>
+          <!-- ⭐⭐⭐ 使用 ChatMessage 组件替代原有的简单 div ⭐⭐⭐ -->
+          <ChatMessage
+            v-for="(msg, index) in chatHistory"
+            :key="index"
+            :type="msg.role"
+            :content="msg.content"
+            :timestamp="msg.created_at"
+            :is-streaming="false"
+          />
+
+          <!-- 正在回复（流式显示）-->
+          <ChatMessage
+            v-if="isChatting"
+            type="assistant"
+            :content="currentReply"
+            :is-streaming="true"
+          />
         </div>
 
-        <!-- 综合建议 -->
-        <div
-          class="section"
-          v-if="
-            analysisResult.suggestions && analysisResult.suggestions.length > 0
-          "
-        >
-          <h4><i class="fas fa-lightbulb"></i> 综合建议</h4>
-          <ul class="suggestions-list">
-            <li
-              v-for="(suggestion, index) in analysisResult.suggestions"
-              :key="index"
-            >
-              {{ suggestion }}
-            </li>
-          </ul>
+        <!-- 输入框 -->
+        <div class="chat-input-area">
+          <input
+            v-model="chatMessage"
+            type="text"
+            placeholder="对代码提问...（需先完成代码分析）"
+            @keypress.enter="handleSendChat"
+            :disabled="isChatting || !analysisResult"
+            class="chat-input"
+          />
+          <button
+            @click="handleSendChat"
+            :disabled="!chatMessage.trim() || isChatting || !analysisResult"
+            class="btn-send"
+          >
+            <i v-if="isChatting" class="fas fa-spinner fa-spin"></i>
+            <i v-else class="fas fa-paper-plane"></i>
+          </button>
         </div>
       </div>
     </div>
@@ -286,43 +346,93 @@ int main() {
 </template>
 
 <script setup>
-import { ref, watch, onMounted, computed } from "vue";
-import { analyzeCode } from "../api/code";
+import { ref, watch, onMounted, computed, nextTick, onBeforeUnmount } from "vue";
+import { analyzeCode, codeChat } from "../api/code";
+import ChatMessage from "./ChatMessage.vue";
 
-// ========== 数据状态 ==========
+// ========== 原有数据状态 ==========
 const code = ref("");
 const analysisResult = ref(null);
 const isAnalyzing = ref(false);
 const analysisType = ref("full");
 const codeEditor = ref(null);
 
-// ⭐ localStorage 键名
-const CODE_DRAFT_KEY = "code_analyzer_draft";
-const ANALYSIS_TYPE_KEY = "code_analysis_type";
+// ⭐⭐⭐ 新增：localStorage 键名常量 ⭐⭐⭐
+const CODE_DRAFT_KEY = "code_analyzer_draft";           // 代码草稿
+const ANALYSIS_TYPE_KEY = "code_analysis_type";         // 分析类型
+const ANALYSIS_RESULT_KEY = "code_analysis_result";     // ⭐ 新增：分析结果
+const CHAT_HISTORY_KEY = "code_chat_history";           // ⭐ 新增：聊天历史
 
-// ⭐ 计算属性：是否有草稿
 const hasDraft = computed(() => {
   return code.value.trim().length > 0;
 });
 
-// ⭐ 组件挂载时恢复草稿
+// ========== 聊天相关状态 ==========
+const chatHistory = ref([]);
+const chatMessage = ref("");
+const isChatting = ref(false);
+const currentReply = ref("");
+const chatMessagesRef = ref(null);
+
+// ========== ⭐⭐⭐ 生命周期钩子（增强版）⭐⭐⭐ ==========
 onMounted(() => {
-  // 恢复代码草稿
+  console.log("🔄 CodeAnalyzer 组件挂载，恢复状态...");
+
+  // 1. 恢复代码草稿
   const savedCode = localStorage.getItem(CODE_DRAFT_KEY);
   if (savedCode) {
     code.value = savedCode;
     console.log("✅ 恢复代码草稿:", savedCode.length, "字符");
   }
 
-  // 恢复分析类型
+  // 2. 恢复分析类型
   const savedType = localStorage.getItem(ANALYSIS_TYPE_KEY);
   if (savedType) {
     analysisType.value = savedType;
     console.log("✅ 恢复分析类型:", savedType);
   }
+
+  // 3. ⭐⭐⭐ 新增：恢复分析结果 ⭐⭐⭐
+  const savedResult = localStorage.getItem(ANALYSIS_RESULT_KEY);
+  if (savedResult) {
+    try {
+      analysisResult.value = JSON.parse(savedResult);
+      console.log("✅ 恢复分析结果:", analysisResult.value.score, "分");
+    } catch (e) {
+      console.error("❌ 解析分析结果失败:", e);
+      localStorage.removeItem(ANALYSIS_RESULT_KEY);
+    }
+  }
+
+  // 4. ⭐⭐⭐ 新增：恢复聊天历史 ⭐⭐⭐
+  const savedChat = localStorage.getItem(CHAT_HISTORY_KEY);
+  if (savedChat) {
+    try {
+      chatHistory.value = JSON.parse(savedChat);
+      console.log("✅ 恢复聊天历史:", chatHistory.value.length, "条消息");
+      
+      // 恢复后滚动到底部
+      nextTick(() => {
+        scrollToBottom();
+      });
+    } catch (e) {
+      console.error("❌ 解析聊天历史失败:", e);
+      localStorage.removeItem(CHAT_HISTORY_KEY);
+    }
+  }
+
+  console.log("✅ CodeAnalyzer 状态恢复完成");
 });
 
-// ⭐ 监听代码变化，自动保存草稿（防抖优化）
+// ⭐⭐⭐ 新增：组件卸载前不需要清空（保留数据）⭐⭐⭐
+onBeforeUnmount(() => {
+  console.log("💾 CodeAnalyzer 组件卸载，数据已保存到 localStorage");
+  // 注意：不做任何清理，让数据保留在 localStorage 中
+});
+
+// ========== ⭐⭐⭐ 监听器（增强版）⭐⭐⭐ ==========
+
+// 1. 监听代码变化（保持不变）
 let saveTimer = null;
 watch(code, (newValue) => {
   if (saveTimer) {
@@ -337,20 +447,39 @@ watch(code, (newValue) => {
       localStorage.removeItem(CODE_DRAFT_KEY);
       console.log("🗑️ 清除代码草稿");
     }
-  }, 1000); // ⭐ 代码较长，延迟 1 秒保存
+  }, 1000);
 });
 
-// ⭐ 监听分析类型变化，自动保存
+// 2. 监听分析类型变化（保持不变）
 watch(analysisType, (newValue) => {
   localStorage.setItem(ANALYSIS_TYPE_KEY, newValue);
   console.log("💾 保存分析类型:", newValue);
 });
 
-// ========== 方法 ==========
+// 3. ⭐⭐⭐ 新增：监听分析结果变化 ⭐⭐⭐
+watch(analysisResult, (newValue) => {
+  if (newValue) {
+    localStorage.setItem(ANALYSIS_RESULT_KEY, JSON.stringify(newValue));
+    console.log("💾 保存分析结果:", newValue.score, "分");
+  } else {
+    localStorage.removeItem(ANALYSIS_RESULT_KEY);
+    console.log("🗑️ 清除分析结果");
+  }
+}, { deep: true });
 
-/**
- * 分析代码
- */
+// 4. ⭐⭐⭐ 新增：监听聊天历史变化 ⭐⭐⭐
+watch(chatHistory, (newValue) => {
+  if (newValue.length > 0) {
+    localStorage.setItem(CHAT_HISTORY_KEY, JSON.stringify(newValue));
+    console.log("💾 保存聊天历史:", newValue.length, "条消息");
+  } else {
+    localStorage.removeItem(CHAT_HISTORY_KEY);
+    console.log("🗑️ 清除聊天历史");
+  }
+}, { deep: true });
+
+// ========== 代码分析方法 ==========
+
 async function handleAnalyze() {
   if (!code.value.trim()) {
     alert("请先输入代码");
@@ -360,12 +489,18 @@ async function handleAnalyze() {
   isAnalyzing.value = true;
   analysisResult.value = null;
 
+  // ⭐ 清空聊天历史（重新分析代码时）
+  chatHistory.value = [];
+  currentReply.value = "";
+
   try {
     const result = await analyzeCode(code.value, analysisType.value);
 
     if (result.status === "success") {
       analysisResult.value = result.data;
       console.log("✅ 分析完成，评分:", result.data.score);
+
+      // ⭐ 分析结果会自动被 watch 监听器保存到 localStorage
     } else {
       alert("分析失败: " + (result.message || "未知错误"));
     }
@@ -377,65 +512,51 @@ async function handleAnalyze() {
   }
 }
 
-/**
- * ⭐ 修改：清空编辑器（同时清除草稿）
- */
 function handleClear() {
   if (confirm("确定要清空代码吗？")) {
     code.value = "";
     analysisResult.value = null;
+    chatHistory.value = [];
 
-    // ⭐ 清除草稿
+    // ⭐ 清除 localStorage 中的所有数据
     localStorage.removeItem(CODE_DRAFT_KEY);
-    console.log("🗑️ 清空代码和草稿");
+    localStorage.removeItem(ANALYSIS_TYPE_KEY);
+    localStorage.removeItem(ANALYSIS_RESULT_KEY);
+    localStorage.removeItem(CHAT_HISTORY_KEY);
+
+    console.log("🗑️ 清空所有代码分析数据");
   }
 }
 
-/**
- * 处理键盘事件（Tab、自动缩进、括号匹配）
- */
+// ========== handleKeyDown 保持不变 ==========
 function handleKeyDown(event) {
   const textarea = event.target;
 
-  // ========== 1. Tab 键插入空格 ==========
   if (event.key === "Tab") {
     event.preventDefault();
-
     const start = textarea.selectionStart;
     const end = textarea.selectionEnd;
     const spaces = "    ";
-
     code.value =
       code.value.substring(0, start) + spaces + code.value.substring(end);
-
     setTimeout(() => {
       textarea.selectionStart = textarea.selectionEnd = start + spaces.length;
     }, 0);
-  }
-
-  // ========== 2. Enter 键自动缩进 ==========
-  else if (event.key === "Enter") {
+  } else if (event.key === "Enter") {
     event.preventDefault();
-
     const start = textarea.selectionStart;
     const lines = code.value.substring(0, start).split("\n");
     const currentLine = lines[lines.length - 1];
-
     const indent = currentLine.match(/^\s*/)[0];
     const needExtraIndent = currentLine.trim().endsWith("{");
     const newIndent = needExtraIndent ? indent + "    " : indent;
-
     const newText = "\n" + newIndent;
     code.value =
       code.value.substring(0, start) + newText + code.value.substring(start);
-
     setTimeout(() => {
       textarea.selectionStart = textarea.selectionEnd = start + newText.length;
     }, 0);
-  }
-
-  // ========== 3. 括号自动匹配 ==========
-  else if (["(", "{", "[", '"', "'"].includes(event.key)) {
+  } else if (["(", "{", "[", '"', "'"].includes(event.key)) {
     const pairs = {
       "(": ")",
       "{": "}",
@@ -443,18 +564,14 @@ function handleKeyDown(event) {
       '"': '"',
       "'": "'",
     };
-
     const start = textarea.selectionStart;
     const end = textarea.selectionEnd;
-
     if (start !== end) {
       event.preventDefault();
       const selectedText = code.value.substring(start, end);
       const newText = event.key + selectedText + pairs[event.key];
-
       code.value =
         code.value.substring(0, start) + newText + code.value.substring(end);
-
       setTimeout(() => {
         textarea.selectionStart = start + 1;
         textarea.selectionEnd = start + 1 + selectedText.length;
@@ -462,10 +579,8 @@ function handleKeyDown(event) {
     } else {
       event.preventDefault();
       const newText = event.key + pairs[event.key];
-
       code.value =
         code.value.substring(0, start) + newText + code.value.substring(start);
-
       setTimeout(() => {
         textarea.selectionStart = textarea.selectionEnd = start + 1;
       }, 0);
@@ -473,9 +588,88 @@ function handleKeyDown(event) {
   }
 }
 
-/**
- * 获取等级文本
- */
+// ========== 聊天相关方法（保持不变）==========
+
+async function handleSendChat() {
+  const question = chatMessage.value.trim();
+
+  if (!question) {
+    return;
+  }
+
+  if (!analysisResult.value) {
+    alert("请先分析代码");
+    return;
+  }
+
+  // ⭐ 添加用户消息到历史（包含时间戳）
+  chatHistory.value.push({
+    role: "user",
+    content: question,
+    created_at: new Date().toISOString(),
+  });
+
+  chatMessage.value = "";
+
+  await nextTick();
+  scrollToBottom();
+
+  isChatting.value = true;
+  currentReply.value = "";
+
+  try {
+    await codeChat(
+      {
+        message: question,
+        code: code.value,
+        features: analysisResult.value.features,
+        analysis: analysisResult.value.ai_analysis || null,
+      },
+      (chunk) => {
+        currentReply.value += chunk;
+        nextTick(() => scrollToBottom());
+      },
+      () => {
+        console.log("✅ 对话完成");
+
+        // ⭐ 将完整回复添加到历史（会自动被 watch 保存）
+        if (currentReply.value.trim()) {
+          chatHistory.value.push({
+            role: "assistant",
+            content: currentReply.value.trim(),
+            created_at: new Date().toISOString(),
+          });
+        }
+
+        currentReply.value = "";
+        isChatting.value = false;
+
+        nextTick(() => scrollToBottom());
+      },
+      (error) => {
+        console.error("❌ 对话失败:", error);
+        alert("对话失败: " + error.message);
+
+        currentReply.value = "";
+        isChatting.value = false;
+      }
+    );
+  } catch (error) {
+    console.error("❌ 发送消息失败:", error);
+    alert("发送失败: " + error.message);
+
+    currentReply.value = "";
+    isChatting.value = false;
+  }
+}
+
+function scrollToBottom() {
+  if (chatMessagesRef.value) {
+    chatMessagesRef.value.scrollTop = chatMessagesRef.value.scrollHeight;
+  }
+}
+
+// ========== 工具方法（保持不变）==========
 function getLevelText(level) {
   const levelMap = {
     A: "优秀",
@@ -487,9 +681,6 @@ function getLevelText(level) {
   return levelMap[level] || "未评级";
 }
 
-/**
- * 获取复杂度文本
- */
 function getComplexityText(complexity) {
   const complexityMap = {
     low: "低",
@@ -597,24 +788,47 @@ function getComplexityText(complexity) {
   cursor: not-allowed;
 }
 
-/* ========== 代码编辑器 ========== */
+/* 草稿提示 */
+.draft-notice {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 16px;
+  background: #e3f2fd;
+  border-bottom: 1px solid #90caf9;
+  font-size: 12px;
+  color: #1976d2;
+}
+
+.draft-notice i {
+  color: #2196f3;
+}
+
+.draft-info {
+  margin-left: auto;
+  padding: 2px 8px;
+  background: rgba(33, 150, 243, 0.1);
+  border-radius: 12px;
+  font-size: 11px;
+}
+
+/* 代码编辑器 */
 .code-editor {
   flex: 1;
   padding: 20px;
   border: none;
-  font-family: "Consolas", "Monaco", "Courier New", monospace; /* ⭐ 等宽字体 */
+  font-family: "Consolas", "Monaco", "Courier New", monospace;
   font-size: 14px;
   line-height: 1.6;
   resize: none;
   outline: none;
   background: #f8f9fa;
-  tab-size: 4; /* ⭐ Tab 显示为 4 个空格宽度 */
+  tab-size: 4;
 }
 
 .code-editor::placeholder {
   color: #999;
-  font-family:
-    "Consolas", "Monaco", "Courier New", monospace; /* ⭐ placeholder 也用等宽字体 */
+  font-family: "Consolas", "Monaco", "Courier New", monospace;
 }
 
 .editor-footer {
@@ -637,16 +851,44 @@ function getComplexityText(complexity) {
   color: #667eea;
 }
 
-/* ========== 结果面板（保持原样）========== */
+/* ========== 右侧面板（分析结果 + 聊天）========== */
 .result-panel {
   background: white;
   border-radius: 12px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+
+  /* ⭐ 关键：flex 垂直布局 */
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* ⭐ 上半部分：分析结果（可滚动） */
+.analysis-result-wrapper {
+  flex: 1;
   overflow-y: auto;
   padding: 20px;
 }
 
-/* 其他样式保持不变... */
+/* 滚动条样式 */
+.analysis-result-wrapper::-webkit-scrollbar {
+  width: 8px;
+}
+
+.analysis-result-wrapper::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.analysis-result-wrapper::-webkit-scrollbar-thumb {
+  background: #d0d0d0;
+  border-radius: 4px;
+}
+
+.analysis-result-wrapper::-webkit-scrollbar-thumb:hover {
+  background: #b0b0b0;
+}
+
+/* 空状态 */
 .empty-state {
   display: flex;
   flex-direction: column;
@@ -655,6 +897,7 @@ function getComplexityText(complexity) {
   height: 100%;
   color: #999;
   text-align: center;
+  gap: 8px;
 }
 
 .empty-icon {
@@ -674,7 +917,7 @@ function getComplexityText(complexity) {
   font-size: 14px;
 }
 
-/* ========== 分析结果 ========== */
+/* 分析结果 */
 .analysis-result {
   display: flex;
   flex-direction: column;
@@ -927,35 +1170,133 @@ function getComplexityText(complexity) {
   border: 1px solid #667eea;
 }
 
-/* 滚动条 */
-.result-panel::-webkit-scrollbar {
-  width: 8px;
+/* ========== ⭐⭐⭐ 聊天区域（固定底部）⭐⭐⭐ ========== */
+.code-chat-section {
+  flex-shrink: 0; /* ⭐ 防止被压缩 */
+  display: flex;
+  flex-direction: column;
+  height: 300px;
+  border-top: 2px solid #e0e0e0; /* ⭐ 增强分隔线 */
+  background: #f8f9fa;
 }
 
-.result-panel::-webkit-scrollbar-track {
+/* 聊天消息列表 */
+.chat-messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 0; /* ⭐ ChatMessage 组件自带间距，这里设为 0 */
+}
+
+/* 空状态提示 */
+.chat-empty {
+  display: flex;
+  flex-direction: column; /* ⭐ 垂直排列 */
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  text-align: center;
+  color: #999;
+  gap: 8px; /* ⭐ 图标和文字间距 */
+}
+
+.chat-empty i {
+  font-size: 32px;
+  opacity: 0.5;
+}
+
+.chat-empty p {
+  margin: 0;
+  font-size: 13px;
+}
+
+/* 输入框区域 */
+.chat-input-area {
+  display: flex;
+  gap: 8px;
+  padding: 12px 16px;
+  background: white;
+  border-top: 1px solid #e0e0e0;
+}
+
+.chat-input {
+  flex: 1;
+  padding: 10px 14px;
+  border: 1px solid #e0e0e0;
+  border-radius: 20px; /* ⭐ 圆角输入框 */
+  font-size: 13px;
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.chat-input:focus {
+  border-color: #667eea;
+}
+
+.chat-input:disabled {
+  background: #f5f5f5;
+  cursor: not-allowed;
+}
+
+.chat-input::placeholder {
+  color: #999;
+}
+
+/* 发送按钮优化 */
+.btn-send {
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  border: none;
+  border-radius: 50%; /* ⭐ 圆形按钮 */
+  background: #667eea;
+  color: white;
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.btn-send:hover:not(:disabled) {
+  background: #5568d3;
+  transform: scale(1.05);
+}
+
+.btn-send:disabled {
+  background: #d0d0d0;
+  cursor: not-allowed;
+}
+
+/* 滚动条美化 */
+.chat-messages::-webkit-scrollbar {
+  width: 6px;
+}
+
+.chat-messages::-webkit-scrollbar-track {
   background: transparent;
 }
 
-.result-panel::-webkit-scrollbar-thumb {
+.chat-messages::-webkit-scrollbar-thumb {
   background: #d0d0d0;
-  border-radius: 4px;
+  border-radius: 3px;
 }
 
-.result-panel::-webkit-scrollbar-thumb:hover {
+.chat-messages::-webkit-scrollbar-thumb:hover {
   background: #b0b0b0;
 }
 
-/* 响应式 */
+/* 响应式优化 */
 @media (max-width: 1200px) {
-  .code-analyzer {
-    grid-template-columns: 1fr;
-    grid-template-rows: 1fr 1fr;
+  .code-chat-section {
+    height: 250px; /* ⭐ 小屏幕减小高度 */
+  }
+
+  .message-content {
+    max-width: 85%; /* ⭐ 小屏幕增加宽度 */
   }
 }
 </style>
-
-/* ⭐ 新增：草稿提示样式 */ .draft-notice { display: flex; align-items: center;
-gap: 10px; padding: 8px 16px; background: #e3f2fd; border-bottom: 1px solid
-#90caf9; font-size: 12px; color: #1976d2; } .draft-notice i { color: #2196f3; }
-.draft-info { margin-left: auto; padding: 2px 8px; background: rgba(33, 150,
-243, 0.1); border-radius: 12px; font-size: 11px; }

@@ -2,154 +2,220 @@
  * 代码分析 API
  */
 
-import axios from 'axios';
-import { getToken } from './auth';
+// 基础 URL
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "/api";
+
+/**
+ * 获取 token
+ */
+function getToken() {
+  return localStorage.getItem("token");
+}
 
 /**
  * 分析代码
- * 
- * @param {string} code - 待分析的代码字符串
- * @param {string} analysisType - 分析类型：'syntax' | 'logic' | 'full'
+ *
+ * @param {string} code - 代码内容
+ * @param {string} analysisType - 分析类型 (syntax/logic/full)
  * @returns {Promise<Object>} 分析结果
- * 
- * 返回格式：
- * {
- *   status: 'success',
- *   message: '代码分析完成',
- *   data: {
- *     success: true,
- *     analysis_type: 'full',
- *     code: '...',
- *     features: {
- *       lines: 10,
- *       chars: 150,
- *       has_main: true,
- *       includes: ['stdio.h'],
- *       functions: ['main'],
- *       keywords: { if: 1, for: 0, while: 0, switch: 0 },
- *       complexity: 'low'
- *     },
- *     syntax_check: {
- *       valid: true,
- *       error_count: 0,
- *       errors: []
- *     },
- *     ai_analysis: {
- *       success: true,
- *       problems: [
- *         { severity: 'error', description: '...' },
- *         { severity: 'warning', description: '...' }
- *       ],
- *       suggestions: ['...'],
- *       summary: '...',
- *       knowledge_used: ['第3章-指针', '第5章-数组'],
- *       raw_response: '...'
- *     },
- *     score: 85,
- *     level: 'B',
- *     suggestions: ['...']
- *   }
- * }
  */
-export async function analyzeCode(code, analysisType = 'full') {
+export async function analyzeCode(code, analysisType = "full") {
   try {
-    console.log('📤 API: 发送代码分析请求', {
-      code_length: code.length,
-      analysis_type: analysisType
+    console.log("📤 发送代码分析请求:", {
+      codeLength: code.length,
+      analysisType,
     });
 
-    const response = await axios.post(
-      '/api/code/analyze',
-      {
-        code: code,
-        analysis_type: analysisType
+    const response = await fetch(`${API_BASE_URL}/code/analyze`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${getToken()}`,
       },
-      {
-        headers: {
-          'Authorization': `Bearer ${getToken()}`
+      credentials: "include",
+      body: JSON.stringify({
+        code,
+        analysis_type: analysisType,
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    }
+
+    const result = await response.json();
+    console.log("✅ 分析完成:", result);
+
+    return result;
+  } catch (error) {
+    console.error("❌ 代码分析失败:", error);
+    throw error;
+  }
+}
+
+/**
+ * ⭐⭐⭐ 代码对话（流式）⭐⭐⭐
+ *
+ * @param {Object} params - 请求参数
+ * @param {string} params.message - 用户问题
+ * @param {string} params.code - 代码内容
+ * @param {Object} params.features - 代码特征
+ * @param {Object} params.analysis - AI 分析结果（可选）
+ * @param {Function} onChunk - 接收数据块的回调
+ * @param {Function} onComplete - 完成的回调
+ * @param {Function} onError - 错误的回调
+ */
+export async function codeChat(
+  { message, code, features, analysis },
+  onChunk,
+  onComplete,
+  onError,
+) {
+  try {
+    console.log("📤 发送代码对话请求:", {
+      message: message.substring(0, 50) + "...",
+      codeLength: code.length,
+      hasAnalysis: !!analysis,
+    });
+
+    const response = await fetch(`${API_BASE_URL}/code/chat`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${getToken()}`,
+        Accept: "text/event-stream",
+      },
+      credentials: "include",
+      body: JSON.stringify({
+        message,
+        code,
+        features,
+        analysis,
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    }
+
+    // ========== 读取 SSE 流 ==========
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder("utf-8");
+
+    let buffer = "";
+    let firstChunkReceived = false;
+    const startTime = Date.now();
+
+    // ⭐ 累积所有内容
+    let accumulatedContent = "";
+
+    while (true) {
+      const { done, value } = await reader.read();
+
+      if (done) {
+        console.log("📥 流式读取完成");
+        console.log(`📊 总共接收: ${accumulatedContent.length} 字符`);
+        break;
+      }
+
+      const text = decoder.decode(value, { stream: true });
+      buffer += text;
+
+      // 按行分割
+      const lines = buffer.split("\n");
+      buffer = lines.pop() || "";
+
+      for (const line of lines) {
+        if (!line.startsWith("data: ")) continue;
+
+        const jsonStr = line.slice(6).trim();
+        if (!jsonStr) continue;
+
+        try {
+          const data = JSON.parse(jsonStr);
+
+          // ⭐ 首字节延迟统计
+          if (!firstChunkReceived && data.type === "content") {
+            firstChunkReceived = true;
+            const latency = Date.now() - startTime;
+            console.log(`⚡ 首字节延迟: ${latency}ms`);
+          }
+
+          switch (data.type) {
+            case "content":
+              if (data.content) {
+                // 累积内容
+                accumulatedContent += data.content;
+
+                // 调用回调（前端显示）
+                if (onChunk) {
+                  onChunk(data.content);
+                }
+              }
+              break;
+
+            case "done":
+              console.log("✅ 服务器发送完成信号");
+              console.log(`📊 完整回答长度: ${accumulatedContent.length} 字符`);
+
+              if (onComplete) {
+                onComplete();
+              }
+              return;
+
+            case "error":
+              console.error("❌ 服务器错误:", data.message);
+              if (onError) {
+                onError(new Error(data.message));
+              }
+              return;
+          }
+        } catch (parseError) {
+          console.warn("⚠️ JSON 解析失败:", jsonStr, parseError);
         }
       }
-    );
+    }
 
-    console.log('📥 API: 收到分析结果', {
-      status: response.data.status,
-      score: response.data.data?.score
-    });
-
-    return response.data;
-
+    // ⭐ 如果没有明确的 done 信号，也调用 onComplete
+    if (onComplete) {
+      onComplete();
+    }
   } catch (error) {
-    console.error('❌ API: 代码分析请求失败', error);
-    
-    // 处理不同类型的错误
-    if (error.response) {
-      // 服务器返回错误状态码
-      const { status, data } = error.response;
-      
-      if (status === 401) {
-        throw new Error('未登录或登录已过期，请重新登录');
-      } else if (status === 400) {
-        throw new Error(data.message || '请求参数错误');
-      } else if (status === 500) {
-        throw new Error(data.message || '服务器错误，请稍后重试');
-      } else {
-        throw new Error(data.message || `请求失败 (${status})`);
-      }
-    } else if (error.request) {
-      // 请求已发送但没有收到响应
-      throw new Error('网络连接失败，请检查网络');
-    } else {
-      // 其他错误
-      throw new Error(error.message || '未知错误');
+    console.error("❌ 代码对话失败:", error);
+    if (onError) {
+      onError(error);
     }
   }
 }
 
 /**
- * 获取代码分析历史（如果后续需要）
- * 
- * @param {number} limit - 获取数量限制
- * @returns {Promise<Object>} 历史记录列表
+ * 获取代码示例列表（可选功能）
  */
-export async function getAnalysisHistory(limit = 10) {
+export async function getCodeExamples() {
   try {
-    const response = await axios.get('/api/code/history', {
-      params: { limit },
+    const response = await fetch(`${API_BASE_URL}/code/examples`, {
+      method: "GET",
       headers: {
-        'Authorization': `Bearer ${getToken()}`
-      }
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${getToken()}`,
+      },
+      credentials: "include",
     });
 
-    return response.data;
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
 
+    return response.json();
   } catch (error) {
-    console.error('❌ API: 获取分析历史失败', error);
+    console.error("❌ 获取示例失败:", error);
     throw error;
   }
 }
 
-/**
- * 保存代码分析结果（如果后续需要）
- * 
- * @param {Object} analysisData - 分析结果数据
- * @returns {Promise<Object>} 保存结果
- */
-export async function saveAnalysisResult(analysisData) {
-  try {
-    const response = await axios.post(
-      '/api/code/save',
-      analysisData,
-      {
-        headers: {
-          'Authorization': `Bearer ${getToken()}`
-        }
-      }
-    );
-
-    return response.data;
-
-  } catch (error) {
-    console.error('❌ API: 保存分析结果失败', error);
-    throw error;
-  }
-}
+// 导出默认对象（可选）
+export default {
+  analyzeCode,
+  codeChat,
+  getCodeExamples,
+};

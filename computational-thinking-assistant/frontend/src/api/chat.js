@@ -39,6 +39,29 @@ apiClient.interceptors.response.use(
 
 export const chatAPI = {
   /**
+   * 测试系统连接
+   */
+  async testConnection() {
+    try {
+      const response = await fetch(`${API_BASE_URL}/test`, {
+        method: "GET",
+        headers: {
+          "Content-Type": "application/json",
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+
+      return response.json();
+    } catch (error) {
+      console.error("❌ 系统测试失败:", error);
+      throw error;
+    }
+  },
+
+  /**
    * ⭐⭐⭐ 流式发送消息（修复版）⭐⭐⭐
    */
   async sendMessageStream(

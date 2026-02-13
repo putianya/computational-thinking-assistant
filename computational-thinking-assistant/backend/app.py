@@ -1720,6 +1720,225 @@ def analyze_code():
             'status': 'error',
             'message': f'代码分析失败: {str(e)}'
         }), 500
+    
+@app.route('/api/code/chat', methods=['POST'])
+@login_required
+def code_chat_stream():
+    """
+    代码分析对话（流式，不使用 RAG）
+    
+    请求体示例：
+    {
+        "message": "这段代码有什么问题？",
+        "code": "#include <stdio.h>\nint main() {...}",
+        "features": {
+            "lines": 10,
+            "functions": ["main"],
+            "complexity": "low",
+            "includes": ["stdio.h"]
+        },
+        "analysis": {  // 可选
+            "problems": [...],
+            "suggestions": [...],
+            "summary": "..."
+        }
+    }
+    
+    返回：SSE 流式响应
+    data: {"type": "content", "content": "这段代码"}
+    data: {"type": "content", "content": "存在以下问题："}
+    data: {"type": "done"}
+    """
+    try:
+        # ========== 1. 获取并验证数据 ==========
+        data = request.get_json()
+        
+        message = data.get('message', '').strip()
+        code = data.get('code', '').strip()
+        features = data.get('features', {})
+        analysis = data.get('analysis')  # 可选
+        
+        # 验证必需字段
+        if not message:
+            return jsonify({
+                'status': 'error',
+                'message': '缺少问题内容'
+            }), 400
+        
+        if not code:
+            return jsonify({
+                'status': 'error',
+                'message': '缺少代码内容'
+            }), 400
+        
+        print(f"\n{'='*60}")
+        print(f"💬 代码对话请求")
+        print(f"{'='*60}")
+        print(f"用户ID: {g.user_id}")
+        print(f"问题: {message[:50]}...")
+        print(f"代码长度: {len(code)} 字符")
+        print(f"特征: {features.get('lines', 0)} 行, 复杂度 {features.get('complexity', 'unknown')}")
+        
+        # ========== 2. 构建提示词 ==========
+        messages = _build_code_chat_prompt(code, features, analysis, message)
+        
+        print(f"构建消息: {len(messages)} 条")
+        
+        # ========== 3. 流式生成响应 ==========
+        def generate():
+            """SSE 生成器"""
+            full_response = ""
+            
+            try:
+                # 获取 LLM 服务
+                llm_service = get_llm_service()
+                
+                print(f"🤖 开始调用 LLM...")
+                
+                # 调用 OpenAI API（流式）
+                stream = llm_service.client.chat.completions.create(
+                    model=llm_service.model,
+                    messages=messages,
+                    temperature=0.3,  # ⭐ 代码分析需要准确，降低随机性
+                    max_tokens=1000,
+                    stream=True,
+                    timeout=30.0
+                )
+                
+                # 流式发送
+                for chunk in stream:
+                    if chunk.choices and len(chunk.choices) > 0:
+                        delta = chunk.choices[0].delta
+                        
+                        if hasattr(delta, 'content') and delta.content:
+                            content = delta.content
+                            full_response += content
+                            
+                            # 发送内容块
+                            yield f"data: {json.dumps({'type': 'content', 'content': content}, ensure_ascii=False)}\n\n"
+                
+                # 发送完成信号
+                print(f"✅ 代码对话完成，共生成 {len(full_response)} 字符")
+                yield f"data: {json.dumps({'type': 'done'}, ensure_ascii=False)}\n\n"
+                
+            except Exception as e:
+                print(f"❌ LLM 调用失败: {e}")
+                traceback.print_exc()
+                
+                # 发送错误信号
+                yield f"data: {json.dumps({'type': 'error', 'message': str(e)}, ensure_ascii=False)}\n\n"
+        
+        # ========== 4. 返回 SSE 响应 ==========
+        return Response(
+            stream_with_context(generate()),
+            content_type='text/event-stream',
+            headers={
+                'Cache-Control': 'no-cache',
+                'X-Accel-Buffering': 'no',
+                'Connection': 'keep-alive'
+            }
+        )
+        
+    except Exception as e:
+        print(f"❌ 代码对话 API 错误: {e}")
+        traceback.print_exc()
+        
+        return jsonify({
+            'status': 'error',
+            'message': f'服务器错误: {str(e)}'
+        }), 500
+
+
+def _build_code_chat_prompt(code, features, analysis, user_message):
+    """
+    构建代码对话的提示词
+    
+    Args:
+        code: 代码字符串
+        features: 代码特征字典
+        analysis: AI 分析结果（可选）
+        user_message: 用户问题
+    
+    Returns:
+        消息列表 [{"role": "system", "content": "..."}, {"role": "user", "content": "..."}]
+    """
+    # ========== 系统提示词 ==========
+    system_prompt = f"""你是一位专业的 C 语言代码分析专家，正在帮助学生理解以下代码。
+
+【待分析代码】
+```c
+{code}
+```
+
+【代码基本信息】
+- 行数: {features.get('lines', 0)}
+- 字符数: {features.get('chars', 0)}
+- 是否包含 main 函数: {'是' if features.get('has_main') else '否'}
+"""
+    
+    # 添加头文件信息
+    if features.get('includes'):
+        system_prompt += f"- 包含头文件: {', '.join(features['includes'])}\n"
+    
+    # 添加函数信息
+    if features.get('functions'):
+        system_prompt += f"- 定义的函数: {', '.join(features['functions'])}\n"
+    
+    # 添加复杂度信息
+    complexity_text = {
+        'low': '低（简单逻辑）',
+        'medium': '中等（有一定控制结构）',
+        'high': '高（复杂逻辑）'
+    }.get(features.get('complexity'), '未知')
+    
+    system_prompt += f"- 代码复杂度: {complexity_text}\n"
+    
+    # ========== 如果有 AI 分析结果，加入上下文 ==========
+    if analysis:
+        system_prompt += f"""
+【AI 分析结果】
+- 问题数: {len(analysis.get('problems', []))}
+- 建议数: {len(analysis.get('suggestions', []))}
+"""
+        
+        # 添加问题列表
+        if analysis.get('problems'):
+            system_prompt += "\n问题列表:\n"
+            for i, problem in enumerate(analysis['problems'][:3], 1):
+                severity = problem.get('severity', 'warning')
+                desc = problem.get('description', '')
+                system_prompt += f"{i}. [{severity}] {desc}\n"
+        
+        # 添加总结
+        if analysis.get('summary'):
+            system_prompt += f"\n总体评价: {analysis['summary']}\n"
+    
+    # ========== 回答原则 ==========
+    system_prompt += """
+【回答原则】
+1. 针对具体代码行号给出建议（如果需要）
+2. 解释概念时结合代码示例
+3. 鼓励学生思考，不要直接给完整答案
+4. 使用中文回答
+5. 如果代码有错误，优先指出错误位置和原因
+6. 回答简洁明了，重点突出
+
+请根据以上信息，回答学生的问题。
+"""
+    
+    # ========== 构建消息列表 ==========
+    messages = [
+        {
+            "role": "system",
+            "content": system_prompt
+        },
+        {
+            "role": "user",
+            "content": user_message
+        }
+    ]
+    
+    return messages
 
 @app.errorhandler(404)
 def not_found(error):
