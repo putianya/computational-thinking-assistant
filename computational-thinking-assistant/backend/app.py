@@ -26,8 +26,12 @@ from models.chat_message import ChatMessage
 from models.knowledge_chunk import KnowledgeChunk
 from services.auth_service import AuthService
 from services.chat_service import ChatService
+from services.analytics.data_collector import DataCollector
 from utils.decorators import login_required, require_permission, require_role
-
+# ⭐⭐⭐ 在文件顶部添加导入 ⭐⭐⭐
+from services.analytics.stats_calculator import StatsCalculator
+from services.analytics.weakness_analyzer import WeaknessAnalyzer
+from services.analytics.chart_generator import ChartGenerator
 # 设置标准输出为 UTF-8 编码
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
 
@@ -130,6 +134,22 @@ def chat_stream():
         print(f"{'='*60}")
         
         service = get_llm_service()
+        
+        # ⭐⭐⭐ 在处理前记录提问行为（异步，不阻塞） ⭐⭐⭐
+        try:
+            # 获取知识点（如果使用了知识库）
+            knowledge_topics = None
+            # 可以从 service 的上下文中提取知识点，暂时设为 None
+            
+            DataCollector.record_question(
+                user_id=g.user_id,
+                session_id=session_id,
+                question=user_message,
+                knowledge_topics=knowledge_topics
+            )
+        except Exception as e:
+            print(f"⚠️ 记录提问行为失败: {e}")
+            # 不影响主流程，继续执行
         
         def generate():
             chunk_count = 0
@@ -812,27 +832,27 @@ def upload_document():
         vector_result=import_single_file(Path(file_path))
 
         # 7. 同步到数据库表
-        db_count = 0
-        for i, chunk in enumerate(chunks):
-            kb_chunk = KnowledgeChunk(
-                content=chunk['content'],
-                source=chunk['source'],
-                chapter=chunk['chapter'],
-                section=chunk.get('section'),
-                keywords=extract_keywords(chunk['content']),
-                vector_id=ids[i],
-                char_count=len(chunk['content'])
-            )
-            kb_chunk.calculate_content_features()
-            db.session.add(kb_chunk)
-            db_count += 1
+        # db_count = 0
+        # for i, chunk in enumerate(chunks):
+        #     kb_chunk = KnowledgeChunk(
+        #         content=chunk['content'],
+        #         source=chunk['source'],
+        #         chapter=chunk['chapter'],
+        #         section=chunk.get('section'),
+        #         keywords=extract_keywords(chunk['content']),
+        #         vector_id=ids[i],
+        #         char_count=len(chunk['content'])
+        #     )
+        #     kb_chunk.calculate_content_features()
+        #     db.session.add(kb_chunk)
+        #     db_count += 1
         
-        db.session.commit()
+        # db.session.commit()
         
         print(f"✅ 文档上传成功: {filename}")
         print(f"   知识块数: {len(chunks)}")
         #print(f"   向量数: {vector_result.get('count', 0)}")
-        print(f"   数据库: {db_count}")
+        # print(f"   数据库: {db_count}")
         
         return jsonify({
             'status': 'success',
@@ -1697,7 +1717,26 @@ def analyze_code():
                 'data': result
             }), 500
         
-        # 5. 返回结果
+        # 5. ⭐⭐⭐ 记录代码提交行为 ⭐⭐⭐
+        try:
+            # 提取知识点（从代码特征中）
+            knowledge_topics = None
+            if result.get('features', {}).get('functions'):
+                functions = result['features']['functions']
+                knowledge_topics = functions[:5] if functions else None
+            
+            DataCollector.record_code_submission(
+                user_id=g.user_id,
+                session_id=None,  # 代码分析通常不在会话中
+                code=code,
+                result=result,
+                knowledge_topics=knowledge_topics
+            )
+        except Exception as e:
+            print(f"⚠️ 记录代码提交失败: {e}")
+            # 不影响主流程，继续返回结果
+        
+        # 6. 返回结果
         print(f"✅ 分析完成")
         print(f"   评分: {result.get('score', 0)}")
         print(f"   等级: {result.get('level', 'N/A')}")
@@ -1939,6 +1978,203 @@ def _build_code_chat_prompt(code, features, analysis, user_message):
     ]
     
     return messages
+# ========== ⭐⭐⭐ 学习分析 API ⭐⭐⭐ ==========
+
+@app.route('/api/analytics/overview', methods=['GET'])
+@login_required
+def get_analytics_overview():
+    """
+    获取学习概览数据
+    
+    Query参数:
+        days: 统计天数 (默认30天)
+    """
+    try:
+        days = request.args.get('days', 30, type=int)
+        user_id = g.user_id
+        
+        print(f"📊 获取用户 {user_id} 的学习概览（{days}天）")
+        
+        # 使用统计计算服务
+        overview_data = StatsCalculator.get_user_overview(user_id, days)
+        
+        return jsonify({
+            'status': 'success',
+            'data': overview_data
+        })
+        
+    except Exception as e:
+        print(f"❌ 获取学习概览失败: {e}")
+        traceback.print_exc()
+        return jsonify({
+            'status': 'error',
+            'message': str(e)
+        }), 500
+
+
+@app.route('/api/analytics/trend', methods=['GET'])
+@login_required
+def get_learning_trend():
+    """
+    获取学习趋势数据
+    
+    Query参数:
+        days: 统计天数 (默认30天)
+    """
+    try:
+        days = request.args.get('days', 30, type=int)
+        user_id = g.user_id
+        
+        print(f"📈 获取用户 {user_id} 的学习趋势（{days}天）")
+        
+        trend_data = StatsCalculator.get_learning_trend(user_id, days)
+        
+        return jsonify({
+            'status': 'success',
+            'data': trend_data
+        })
+        
+    except Exception as e:
+        print(f"❌ 获取学习趋势失败: {e}")
+        return jsonify({
+            'status': 'error',
+            'message': str(e)
+        }), 500
+
+
+@app.route('/api/analytics/knowledge-mastery', methods=['GET'])
+@login_required
+def get_knowledge_mastery():
+    """
+    获取知识点掌握度数据
+    
+    Query参数:
+        days: 统计天数 (默认30天)
+    """
+    try:
+        days = request.args.get('days', 30, type=int)
+        user_id = g.user_id
+        
+        print(f"🎯 获取用户 {user_id} 的知识点掌握度（{days}天）")
+        
+        mastery_data = StatsCalculator.get_knowledge_mastery(user_id, days)
+        
+        return jsonify({
+            'status': 'success',
+            'data': mastery_data
+        })
+        
+    except Exception as e:
+        print(f"❌ 获取知识点掌握度失败: {e}")
+        return jsonify({
+            'status': 'error',
+            'message': str(e)
+        }), 500
+
+
+@app.route('/api/analytics/weakness', methods=['GET'])
+@login_required
+def get_weakness_analysis():
+    """
+    获取薄弱环节分析
+    
+    Query参数:
+        days: 统计天数 (默认30天)
+    """
+    try:
+        days = request.args.get('days', 30, type=int)
+        user_id = g.user_id
+        
+        print(f"⚠️ 获取用户 {user_id} 的薄弱环节分析（{days}天）")
+        
+        weakness_data = WeaknessAnalyzer.analyze_weaknesses(user_id, days)
+        
+        return jsonify({
+            'status': 'success',
+            'data': weakness_data
+        })
+        
+    except Exception as e:
+        print(f"❌ 获取薄弱环节分析失败: {e}")
+        return jsonify({
+            'status': 'error',
+            'message': str(e)
+        }), 500
+
+
+@app.route('/api/analytics/error-distribution', methods=['GET'])
+@login_required
+def get_error_distribution():
+    """获取错误分布数据"""
+    try:
+        user_id = g.user_id
+        
+        print(f"📊 获取用户 {user_id} 的错误分布")
+        
+        error_data = StatsCalculator.get_error_distribution(user_id)
+        
+        return jsonify({
+            'status': 'success',
+            'data': error_data
+        })
+        
+    except Exception as e:
+        print(f"❌ 获取错误分布失败: {e}")
+        return jsonify({
+            'status': 'error',
+            'message': str(e)
+        }), 500
+
+
+@app.route('/api/analytics/code-quality', methods=['GET'])
+@login_required
+def get_code_quality_trend():
+    """获取代码质量趋势"""
+    try:
+        days = request.args.get('days', 30, type=int)
+        user_id = g.user_id
+        
+        print(f"💻 获取用户 {user_id} 的代码质量趋势（{days}天）")
+        
+        quality_data = StatsCalculator.get_code_quality_trend(user_id, days)
+        
+        return jsonify({
+            'status': 'success',
+            'data': quality_data
+        })
+        
+    except Exception as e:
+        print(f"❌ 获取代码质量趋势失败: {e}")
+        return jsonify({
+            'status': 'error',
+            'message': str(e)
+        }), 500
+
+
+@app.route('/api/analytics/activity-heatmap', methods=['GET'])
+@login_required
+def get_activity_heatmap():
+    """获取活动热力图数据"""
+    try:
+        days = request.args.get('days', 90, type=int)
+        user_id = g.user_id
+        
+        print(f"🔥 获取用户 {user_id} 的活动热力图（{days}天）")
+        
+        heatmap_data = StatsCalculator.get_activity_heatmap(user_id, days)
+        
+        return jsonify({
+            'status': 'success',
+            'data': heatmap_data
+        })
+        
+    except Exception as e:
+        print(f"❌ 获取活动热力图失败: {e}")
+        return jsonify({
+            'status': 'error',
+            'message': str(e)
+        }), 500
+
 
 @app.errorhandler(404)
 def not_found(error):

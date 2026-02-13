@@ -20,7 +20,11 @@ def init_db(app):
         # ⭐ 导入所有模型（确保表被创建）
         from models.user import User
         from models.chat_session import ChatSession
-        from models.chat_message import ChatMessage  # ⭐ 新增
+        from models.chat_message import ChatMessage
+        # ⭐⭐⭐ 新增：学习分析模型 ⭐⭐⭐
+        from models.learning_record import LearningRecord
+        from models.error_pattern import ErrorPattern
+        from models.learning_report import LearningReport
         
         # 创建所有表
         db.create_all()

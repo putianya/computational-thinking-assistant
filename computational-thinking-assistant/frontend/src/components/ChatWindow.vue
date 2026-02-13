@@ -20,8 +20,9 @@ import { useAuthStore } from "../stores/user";
 import TabBar from "./TabBar.vue";
 import ChatView from "./ChatView.vue";
 import KnowledgeBase from "./KnowledgeBase.vue";
-import CodeAnalyzer from "./CodeAnalyzer.vue"; // ⭐ 添加这行
+import CodeAnalyzer from "./CodeAnalyzer.vue";
 import UserManagement from "./UserManagement.vue";
+import LearningAnalytics from "./analytics/LearningAnalytics.vue"; // ⭐ 新增
 
 const authStore = useAuthStore();
 const currentTab = ref("chat");
@@ -35,12 +36,18 @@ const availableTabs = computed(() => {
       icon: "fas fa-comments",
       component: ChatView,
     },
-    // ⭐ 添加代码分析标签（所有登录用户可用）
     {
       id: "code",
       label: "代码分析",
       icon: "fas fa-code",
       component: CodeAnalyzer,
+    },
+    // ⭐⭐⭐ 新增：学习分析标签（所有用户可见）⭐⭐⭐
+    {
+      id: "analytics",
+      label: "学习分析",
+      icon: "fas fa-chart-line",
+      component: LearningAnalytics,
     },
   ];
 
