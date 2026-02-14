@@ -6,7 +6,7 @@
 """
 
 from datetime import datetime, timedelta
-from sqlalchemy import func, case
+from sqlalchemy import func
 from database import db
 from models.learning_record import LearningRecord
 from models.error_pattern import ErrorPattern
@@ -201,79 +201,101 @@ class StatsCalculator:
         """
         获取学习趋势（按天统计）
         ⭐ 学习时长基于心跳精确计算
+        ⭐ 新增 avg_score 字段用于代码提交双轴图
         """
+        from datetime import datetime, timedelta
+        from sqlalchemy import func
+        
         cutoff_date = datetime.utcnow() - timedelta(days=days)
         
-        # 1. 按日期分组统计行为（排除心跳）
-        daily_stats = db.session.query(
-            func.date(LearningRecord.created_at).label('date'),
-            func.count(LearningRecord.id).label('count'),
-            func.sum(
-                case(
-                    (LearningRecord.action_type == 'code_submit', 1),
-                    else_=0
-                )
-            ).label('code_count'),
-            func.sum(
-                case(
-                    (LearningRecord.is_correct == True, 1),
-                    else_=0
-                )
-            ).label('correct_count')
-        ).filter(
-            LearningRecord.user_id == user_id,
-            LearningRecord.created_at >= cutoff_date,
-            LearningRecord.action_type != 'heartbeat'  # ⭐ 排除心跳
-        ).group_by(
-            func.date(LearningRecord.created_at)
-        ).all()
-        
-        # 2. ⭐ 按日期统计心跳（学习时长）
-        daily_heartbeats = db.session.query(
-            func.date(LearningRecord.created_at).label('date'),
-            func.count(LearningRecord.id).label('heartbeat_count')
-        ).filter(
-            LearningRecord.user_id == user_id,
-            LearningRecord.created_at >= cutoff_date,
-            LearningRecord.action_type == 'heartbeat'
-        ).group_by(
-            func.date(LearningRecord.created_at)
-        ).all()
-        
-        # 转为字典方便查找
-        heartbeat_map = {str(h.date): h.heartbeat_count for h in daily_heartbeats}
-        
-        # 3. 填充缺失日期
-        result = []
+        # 生成日期列表
+        date_list = []
         for i in range(days):
-            date = (datetime.utcnow() - timedelta(days=days - i - 1)).date()
-            date_str = date.isoformat()
-            stat = next((s for s in daily_stats if str(s.date) == date_str), None)
-            hb_count = heartbeat_map.get(date_str, 0)
-            
-            if stat:
-                code_count = stat.code_count or 0
-                correct_count = stat.correct_count or 0
-                accuracy = (correct_count / code_count * 100) if code_count > 0 else 0
-                result.append({
-                    'date': date_str,
-                    'total_count': stat.count,
-                    'code_count': code_count,
-                    'correct_count': correct_count,
-                    'accuracy': round(accuracy, 1),
-                    'duration_minutes': hb_count  # ⭐ 精确学习分钟数
-                })
-            else:
-                result.append({
-                    'date': date_str,
-                    'total_count': 0,
-                    'code_count': 0,
-                    'correct_count': 0,
-                    'accuracy': 0,
-                    'duration_minutes': hb_count
-                })
+            d = datetime.utcnow() - timedelta(days=days - 1 - i)
+            date_list.append(d.strftime('%Y-%m-%d'))
         
-        return result
+        # 按天统计各类行为
+        trend_data = []
+        
+        for date_str in date_list:
+            # 当天的时间范围
+            try:
+                day_start = datetime.strptime(date_str, '%Y-%m-%d')
+            except:
+                continue
+            day_end = day_start + timedelta(days=1)
+            
+            # 心跳数 -> 学习时长（小时）
+            heartbeat_count = LearningRecord.query.filter(
+                LearningRecord.user_id == user_id,
+                LearningRecord.action_type == 'heartbeat',
+                LearningRecord.created_at >= day_start,
+                LearningRecord.created_at < day_end
+            ).count()
+            duration_hours = round(heartbeat_count / 60, 2)
+            
+            # 提问次数
+            question_count = LearningRecord.query.filter(
+                LearningRecord.user_id == user_id,
+                LearningRecord.action_type == 'ask',
+                LearningRecord.created_at >= day_start,
+                LearningRecord.created_at < day_end
+            ).count()
+            
+            # 代码提交
+            code_records = LearningRecord.query.filter(
+                LearningRecord.user_id == user_id,
+                LearningRecord.action_type == 'code_submit',
+                LearningRecord.created_at >= day_start,
+                LearningRecord.created_at < day_end
+            ).all()
+            
+            code_count = len(code_records)
+            correct_count = sum(1 for r in code_records if r.is_correct)
+            accuracy = round((correct_count / code_count * 100), 1) if code_count > 0 else None
+            
+            # ⭐⭐⭐ 新增：计算平均分数 ⭐⭐⭐
+            avg_score = None
+            if code_records:
+                import json
+                scores = []
+                for r in code_records:
+                    try:
+                        if r.content:
+                            content_data = json.loads(r.content)
+                            score = content_data.get('score')
+                            if score is not None:
+                                scores.append(score)
+                    except:
+                        pass
+                if scores:
+                    avg_score = round(sum(scores) / len(scores), 1)
+            
+            # 总活动数（不含心跳）
+            total_count = question_count + code_count
+            
+            # 知识查看
+            view_count = LearningRecord.query.filter(
+                LearningRecord.user_id == user_id,
+                LearningRecord.action_type == 'view_knowledge',
+                LearningRecord.created_at >= day_start,
+                LearningRecord.created_at < day_end
+            ).count()
+            
+            total_count += view_count
+            
+            trend_data.append({
+                'date': date_str,
+                'duration': duration_hours,
+                'total_count': total_count,
+                'question_count': question_count,
+                'code_count': code_count,
+                'accuracy': accuracy,
+                'avg_score': avg_score,   # ⭐ 新增
+                'view_count': view_count,
+            })
+        
+        return trend_data
     
     @staticmethod
     def get_knowledge_mastery(user_id, days=30):

@@ -5,7 +5,6 @@
     <div class="analytics-header">
       <h2>📊 学习数据分析</h2>
       <div class="header-actions">
-        <!-- 学生选择下拉框 -->
         <select
           v-model="selectedStudent"
           @change="handleStudentChange"
@@ -47,7 +46,7 @@
       </div>
     </div>
 
-    <!-- 主内容区：左侧卡片 + 右侧图表 -->
+    <!-- 主内容区 -->
     <div class="analytics-content">
       <!-- 左侧：统计卡片 -->
       <div class="left-panel">
@@ -94,7 +93,9 @@
             class="rank-item"
             @click="quickSelectStudent(s.user_id)"
           >
-            <span class="rank-num">{{ index + 1 }}</span>
+            <span class="rank-num" :class="getRankClass(index)">{{
+              index + 1
+            }}</span>
             <span class="rank-name">{{ s.nickname || s.username }}</span>
             <span class="rank-value">{{ s.total_duration_hours }}h</span>
           </div>
@@ -103,6 +104,7 @@
 
       <!-- 右侧：图表展示区 -->
       <div class="right-panel">
+        <!-- 空状态：未选择学生 -->
         <div
           v-if="!analyticsStore.selectedCard && !selectedStudent"
           class="empty-chart"
@@ -112,6 +114,7 @@
           <p>从顶部下拉框选择学生，或点击左侧排行中的学生</p>
         </div>
 
+        <!-- 空状态：已选择学生但未选择卡片 -->
         <div
           v-else-if="!analyticsStore.selectedCard && selectedStudent"
           class="empty-chart"
@@ -121,7 +124,7 @@
           <p>选中学生：{{ currentStudentName }}</p>
         </div>
 
-        <!-- 学习时长趋势图 -->
+        <!-- 📚 学习时长趋势（折线图） -->
         <div
           v-else-if="analyticsStore.selectedCard === 'duration'"
           class="chart-container"
@@ -130,7 +133,7 @@
           <TrendChart :data="analyticsStore.learningTrend" type="duration" />
         </div>
 
-        <!-- 提问次数趋势图 -->
+        <!-- 💬 提问次数趋势（柱状图） -->
         <div
           v-else-if="analyticsStore.selectedCard === 'questions'"
           class="chart-container"
@@ -139,7 +142,7 @@
           <TrendChart :data="analyticsStore.learningTrend" type="questions" />
         </div>
 
-        <!-- 代码提交趋势图 -->
+        <!-- 💻 代码提交（双轴折线图） -->
         <div
           v-else-if="analyticsStore.selectedCard === 'code'"
           class="chart-container"
@@ -148,25 +151,28 @@
           <TrendChart :data="analyticsStore.learningTrend" type="code" />
         </div>
 
-        <!-- 正确率趋势图 -->
+        <!-- ✅ 代码正确率（仪表盘+趋势线） -->
         <div
           v-else-if="analyticsStore.selectedCard === 'accuracy'"
           class="chart-container"
         >
-          <h3>✅ {{ currentStudentName }} - 代码正确率趋势</h3>
+          <h3>✅ {{ currentStudentName }} - 代码正确率</h3>
           <TrendChart :data="analyticsStore.learningTrend" type="accuracy" />
         </div>
 
-        <!-- 活跃天数 -->
+        <!-- 📅 活跃天数（日历热力图） -->
         <div
           v-else-if="analyticsStore.selectedCard === 'active_days'"
           class="chart-container"
         >
           <h3>📅 {{ currentStudentName }} - 活跃天数分布</h3>
-          <div class="heatmap-placeholder"><p>🔧 日历热力图开发中...</p></div>
+          <ActivityHeatmap
+            :data="analyticsStore.learningTrend"
+            :days="Number(selectedPeriod)"
+          />
         </div>
 
-        <!-- 知识点查看 -->
+        <!-- 👁️ 知识点查看（横向柱状图） -->
         <div
           v-else-if="analyticsStore.selectedCard === 'views'"
           class="chart-container"
@@ -185,14 +191,13 @@ import { useAnalyticsStore } from "../../stores/analytics";
 import OverviewPanel from "./OverviewPanel.vue";
 import TrendChart from "./TrendChart.vue";
 import WeaknessChart from "./WeaknessChart.vue";
+import ActivityHeatmap from "./ActivityHeatmap.vue";
 
 const analyticsStore = useAnalyticsStore();
 
-// ⭐⭐⭐ 使用 Store 中的持久化值初始化本地状态 ⭐⭐⭐
 const selectedPeriod = ref(analyticsStore.currentPeriod);
 const selectedStudent = ref(analyticsStore.selectedStudentId);
 
-// ⭐ 同步 Store 和本地状态
 watch(
   () => analyticsStore.selectedStudentId,
   (val) => {
@@ -207,28 +212,22 @@ watch(
   },
 );
 
-// 当前选中学生名称
 const currentStudentName = computed(() => {
   if (!selectedStudent.value) return "全部学生";
   const s = analyticsStore.students.find((s) => s.id === selectedStudent.value);
   return s ? s.nickname || s.username : "未知学生";
 });
 
+function getRankClass(index) {
+  if (index === 0) return "gold";
+  if (index === 1) return "silver";
+  if (index === 2) return "bronze";
+  return "";
+}
+
 onMounted(async () => {
   console.log("📊 学习分析组件挂载");
-  console.log(
-    "📦 恢复状态: 学生=",
-    analyticsStore.selectedStudentId,
-    "周期=",
-    analyticsStore.currentPeriod,
-    "卡片=",
-    analyticsStore.selectedCard,
-  );
-
-  // 先加载学生列表
   await analyticsStore.loadStudents();
-
-  // ⭐⭐⭐ 如果有缓存的数据且 overview 已存在，不重复加载 ⭐⭐⭐
   if (!analyticsStore.overview) {
     await analyticsStore.loadAllData(selectedPeriod.value);
   }
@@ -243,7 +242,6 @@ async function handleRefresh() {
 }
 
 async function handleStudentChange() {
-  // ⭐ 清除卡片选中
   analyticsStore.setSelectedCard(null);
   await analyticsStore.selectStudent(selectedStudent.value);
 }
@@ -253,7 +251,6 @@ function quickSelectStudent(userId) {
   handleStudentChange();
 }
 
-// ⭐⭐⭐ 修改：使用 Store 方法持久化卡片选择 ⭐⭐⭐
 function handleCardClick(cardType) {
   analyticsStore.setSelectedCard(cardType);
 }
@@ -351,7 +348,6 @@ function handleCardClick(cardType) {
 .left-panel::-webkit-scrollbar {
   width: 6px;
 }
-
 .left-panel::-webkit-scrollbar-thumb {
   background: #cbd5e0;
   border-radius: 3px;
@@ -381,7 +377,6 @@ function handleCardClick(cardType) {
   font-size: 15px;
   color: #555;
 }
-
 .summary-info strong {
   color: #667eea;
   font-size: 18px;
@@ -430,17 +425,15 @@ function handleCardClick(cardType) {
   flex-shrink: 0;
 }
 
-.rank-item:nth-child(2) .rank-num {
+.rank-num.gold {
   background: #ffd700;
   color: #333;
 }
-
-.rank-item:nth-child(3) .rank-num {
+.rank-num.silver {
   background: #c0c0c0;
   color: #333;
 }
-
-.rank-item:nth-child(4) .rank-num {
+.rank-num.bronze {
   background: #cd7f32;
   color: white;
 }
@@ -450,7 +443,6 @@ function handleCardClick(cardType) {
   font-size: 14px;
   color: #333;
 }
-
 .rank-value {
   font-size: 14px;
   font-weight: bold;
@@ -472,13 +464,11 @@ function handleCardClick(cardType) {
   margin-bottom: 20px;
   opacity: 0.5;
 }
-
 .empty-chart h3 {
   margin: 0 0 12px 0;
   font-size: 20px;
   color: #666;
 }
-
 .empty-chart p {
   margin: 0;
   font-size: 14px;
@@ -499,27 +489,14 @@ function handleCardClick(cardType) {
   flex-shrink: 0;
 }
 
-.heatmap-placeholder {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border: 2px dashed #ddd;
-  border-radius: 8px;
-  color: #999;
-  background: #f9f9f9;
-}
-
 @media (max-width: 1200px) {
   .analytics-content {
     flex-direction: column;
   }
-
   .left-panel {
     width: 100%;
     max-height: 300px;
   }
-
   .right-panel {
     min-height: 400px;
   }

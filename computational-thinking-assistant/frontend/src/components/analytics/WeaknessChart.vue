@@ -3,24 +3,7 @@
   <div class="weakness-chart">
     <!-- 有数据 -->
     <div v-if="chartData.length > 0" class="chart-area">
-      <div class="list-view">
-        <div
-          v-for="(item, index) in chartData.slice(0, 10)"
-          :key="index"
-          class="topic-item"
-        >
-          <div class="topic-info">
-            <span class="rank">{{ index + 1 }}</span>
-            <span class="topic-name">{{ item.topic }}</span>
-          </div>
-          <div class="topic-stats">
-            <span class="count">{{ item.total_count || 0 }}次</span>
-            <span class="mastery" :style="getMasteryColor(item.mastery)">
-              {{ item.mastery || 0 }}%
-            </span>
-          </div>
-        </div>
-      </div>
+      <BaseChart :option="chartOption" :height="chartHeight" />
     </div>
 
     <!-- 无数据 -->
@@ -34,6 +17,7 @@
 
 <script setup>
 import { computed } from "vue";
+import BaseChart from "./BaseChart.vue";
 
 const props = defineProps({
   data: {
@@ -47,15 +31,99 @@ const props = defineProps({
 });
 
 const chartData = computed(() => {
-  return props.data || [];
+  return (props.data || []).slice(0, 15); // 最多显示15个
 });
 
-// 根据掌握度设置颜色
-function getMasteryColor(mastery) {
-  if (mastery >= 80) return { color: "#67C23A" };
-  if (mastery >= 60) return { color: "#E6A23C" };
-  return { color: "#F56C6C" };
-}
+// 动态高度：每个知识点40px，最小300px
+const chartHeight = computed(() => {
+  const count = chartData.value.length;
+  return Math.max(300, count * 45 + 80) + "px";
+});
+
+const chartOption = computed(() => {
+  if (chartData.value.length === 0) return {};
+
+  // 排序：按查看次数降序
+  const sorted = [...chartData.value].sort(
+    (a, b) => (b.total_count || 0) - (a.total_count || 0),
+  );
+
+  const topics = sorted.map((d) => d.topic || "未知");
+  const counts = sorted.map((d) => d.total_count || 0);
+  const masteries = sorted.map((d) => d.mastery || 0);
+
+  return {
+    tooltip: {
+      trigger: "axis",
+      axisPointer: { type: "shadow" },
+      formatter: (params) => {
+        const idx = params[0]?.dataIndex;
+        if (idx === undefined) return "";
+        const item = sorted[idx];
+        return `<b>${item.topic}</b><br/>查看次数: ${item.total_count || 0} 次<br/>掌握度: ${item.mastery || 0}%`;
+      },
+    },
+    legend: {
+      data: ["查看次数", "掌握度"],
+      top: 0,
+    },
+    grid: {
+      left: 120,
+      right: 50,
+      top: 35,
+      bottom: 10,
+      containLabel: false,
+    },
+    xAxis: [
+      {
+        type: "value",
+        name: "次数",
+        position: "top",
+        splitLine: { lineStyle: { type: "dashed" } },
+      },
+    ],
+    yAxis: {
+      type: "category",
+      data: topics.reverse(),
+      axisLabel: {
+        fontSize: 13,
+        width: 110,
+        overflow: "truncate",
+        ellipsis: "...",
+      },
+      inverse: false,
+    },
+    series: [
+      {
+        name: "查看次数",
+        type: "bar",
+        data: counts.reverse(),
+        barMaxWidth: 20,
+        itemStyle: {
+          color: {
+            type: "linear",
+            x: 0,
+            y: 0,
+            x2: 1,
+            y2: 0,
+            colorStops: [
+              { offset: 0, color: "#667eea" },
+              { offset: 1, color: "#764ba2" },
+            ],
+          },
+          borderRadius: [0, 4, 4, 0],
+        },
+        label: {
+          show: true,
+          position: "right",
+          fontSize: 12,
+          color: "#666",
+          formatter: "{c}次",
+        },
+      },
+    ],
+  };
+});
 </script>
 
 <style scoped>
@@ -67,63 +135,6 @@ function getMasteryColor(mastery) {
 
 .chart-area {
   flex: 1;
-}
-
-.list-view {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.topic-item {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 15px;
-  background: #f9f9f9;
-  border-radius: 8px;
-  border-left: 4px solid #667eea;
-}
-
-.topic-info {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.rank {
-  width: 28px;
-  height: 28px;
-  background: #667eea;
-  color: white;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-weight: bold;
-  font-size: 14px;
-}
-
-.topic-name {
-  font-size: 15px;
-  color: #333;
-  font-weight: 500;
-}
-
-.topic-stats {
-  display: flex;
-  gap: 16px;
-  align-items: center;
-}
-
-.count {
-  font-size: 14px;
-  color: #666;
-}
-
-.mastery {
-  font-size: 16px;
-  font-weight: bold;
 }
 
 .empty-state {
