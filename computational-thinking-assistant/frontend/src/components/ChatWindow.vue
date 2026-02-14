@@ -22,12 +22,12 @@ import ChatView from "./ChatView.vue";
 import KnowledgeBase from "./KnowledgeBase.vue";
 import CodeAnalyzer from "./CodeAnalyzer.vue";
 import UserManagement from "./UserManagement.vue";
-import LearningAnalytics from "./analytics/LearningAnalytics.vue"; // ⭐ 新增
+import LearningAnalytics from "./analytics/LearningAnalytics.vue";
 
 const authStore = useAuthStore();
 const currentTab = ref("chat");
 
-// ⭐⭐⭐ 根据用户角色动态显示标签 ⭐⭐⭐
+// ⭐⭐⭐ 修复：根据用户角色动态显示标签 ⭐⭐⭐
 const availableTabs = computed(() => {
   const tabs = [
     {
@@ -42,14 +42,17 @@ const availableTabs = computed(() => {
       icon: "fas fa-code",
       component: CodeAnalyzer,
     },
-    // ⭐⭐⭐ 新增：学习分析标签（所有用户可见）⭐⭐⭐
-    {
+  ];
+
+  // ⭐⭐⭐ 修改：学习分析只对教师和管理员可见 ⭐⭐⭐
+  if (authStore.hasAnyRole(["teacher", "admin"])) {
+    tabs.push({
       id: "analytics",
       label: "学习分析",
       icon: "fas fa-chart-line",
       component: LearningAnalytics,
-    },
-  ];
+    });
+  }
 
   // 教师和管理员可以看到知识库管理
   if (authStore.hasPermission("manage_knowledge")) {
@@ -74,13 +77,11 @@ const availableTabs = computed(() => {
   return tabs;
 });
 
-// ⭐⭐⭐ 当前显示的组件 ⭐⭐⭐
 const currentComponent = computed(() => {
   return availableTabs.value.find((tab) => tab.id === currentTab.value)
     ?.component;
 });
 
-// ⭐⭐⭐ 标签切换处理 ⭐⭐⭐
 function handleTabSwitch(tabId) {
   console.log("📑 切换标签:", currentTab.value, "→", tabId);
   currentTab.value = tabId;

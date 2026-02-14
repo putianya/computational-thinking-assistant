@@ -32,6 +32,8 @@
 <script setup>
 import { onMounted } from "vue";
 import { useRouter } from "vue-router";
+import { onUnmounted, watch } from "vue";
+import { analyticsAPI } from "./api/analytics";
 import { useAuthStore } from "./stores/user";
 import ChatWindow from "./components/ChatWindow.vue";
 import SystemTest from "./components/SystemTest.vue";
@@ -39,27 +41,71 @@ import SystemTest from "./components/SystemTest.vue";
 const router = useRouter();
 const authStore = useAuthStore();
 
-// 页面加载时自动登录
-onMounted(async () => {
-  console.log("🚀 应用启动，尝试自动登录...");
-  const success = await authStore.autoLogin();
+// ⭐⭐⭐ 心跳定时器 ⭐⭐⭐
+let heartbeatTimer = null;
 
-  if (success) {
-    console.log("✅ 自动登录成功，跳转到首页");
-    router.push("/");
-  } else {
-    console.log("📭 无有效登录状态，跳转到登录页");
-    router.push("/login");
+/**
+ * 启动心跳（学生登录后自动开始）
+ */
+function startHeartbeat() {
+  stopHeartbeat(); // 先清除旧的
+
+  // 只有学生才发送心跳
+  if (!authStore.isLoggedIn || authStore.user?.role !== "student") {
+    return;
+  }
+
+  console.log("💓 启动学习心跳（每60秒）");
+
+  // 立即发一次
+  analyticsAPI.sendHeartbeat("chat");
+
+  // 每60秒发一次
+  heartbeatTimer = setInterval(() => {
+    if (authStore.isLoggedIn && authStore.user?.role === "student") {
+      analyticsAPI.sendHeartbeat("chat");
+    } else {
+      stopHeartbeat();
+    }
+  }, 60000); // 60秒
+}
+
+/**
+ * 停止心跳
+ */
+function stopHeartbeat() {
+  if (heartbeatTimer) {
+    clearInterval(heartbeatTimer);
+    heartbeatTimer = null;
+    console.log("💔 停止学习心跳");
+  }
+}
+
+// 监听登录状态变化
+watch(
+  () => authStore.isLoggedIn,
+  (loggedIn) => {
+    if (loggedIn) {
+      startHeartbeat();
+    } else {
+      stopHeartbeat();
+    }
+  },
+);
+
+onMounted(async () => {
+  // 自动登录
+  await authStore.autoLogin();
+
+  // 登录成功后启动心跳
+  if (authStore.isLoggedIn) {
+    startHeartbeat();
   }
 });
 
-// 退出登录
-function handleLogout() {
-  if (confirm("确定要退出登录吗？")) {
-    authStore.logout();
-    router.push("/login");
-  }
-}
+onUnmounted(() => {
+  stopHeartbeat();
+});
 </script>
 
 <style scoped>

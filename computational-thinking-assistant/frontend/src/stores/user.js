@@ -177,13 +177,18 @@ export const useAuthStore = defineStore("user", () => {
     localStorage.removeItem("token");
     localStorage.removeItem("user");
 
-    // ⭐⭐⭐ 新增：清除代码分析相关的 localStorage ⭐⭐⭐
+    // ⭐ 清除代码分析相关的 localStorage
     localStorage.removeItem("code_analyzer_draft");
     localStorage.removeItem("code_analysis_type");
     localStorage.removeItem("code_analysis_result");
     localStorage.removeItem("code_chat_history");
 
-    console.log("🗑️ 已清除代码分析数据");
+    // ⭐⭐⭐ 新增：清除学习分析的 localStorage ⭐⭐⭐
+    localStorage.removeItem("analytics_selected_student");
+    localStorage.removeItem("analytics_selected_period");
+    localStorage.removeItem("analytics_selected_card");
+
+    console.log("🗑️ 已清除所有缓存数据");
 
     // ⭐ 重置聊天 Store
     const chatStore = useChatStore();

@@ -757,12 +757,7 @@ def upload_document():
                 'message': '只支持 .md 格式的文件'
             }), 400
         
-        # # 2. 安全处理文件名
-        # filename = secure_filename(file.filename)
-        # if not filename:
-        #     filename = f"document_{int(time.time())}.md"
-
-        filename=file.filename
+        filename = file.filename
         
         # 3. 保存文件到 /data/knowledge 目录
         knowledge_dir = Path(BASE_DIR) / 'data' / 'knowledge'
@@ -784,82 +779,26 @@ def upload_document():
             db.session.commit()
             print(f"🗑️ 已删除旧知识块: {len(old_chunks)} 个")
         
-        # 5. 导入知识库
-        from scripts.import_knowledge import split_by_headers, extract_keywords,import_single_file
-        import time as time_module
+        # 5. 调用 import_single_file 导入知识库
+        from scripts.import_knowledge import import_single_file
         
-        # 读取文件内容
-        with open(file_path, 'r', encoding='utf-8') as f:
-            content = f.read()
+        vector_result = import_single_file(Path(file_path))
         
-        # 分块
-        chunks = split_by_headers(content, filename)
-        print(f"✂️ 分割成 {len(chunks)} 个知识块")
-        
-        if not chunks:
-            return jsonify({
-                'status': 'success',
-                'message': '文件已上传，但未检测到有效内容',
-                'data': {
-                    'file_name': filename,
-                    'chunks_count': 0
-                }
-            })
-        
-        # 6. 导入到向量数据库
-        # from services.vector_service import get_vector_service
-        # vector_service = get_vector_service()
-        
-        timestamp = int(time_module.time() * 1000)
-        texts = [chunk['content'] for chunk in chunks]
-        metadatas = [
-            {
-                'source': chunk['source'],
-                'chapter': chunk['chapter'],
-                'section': chunk.get('section'),
-                'level': chunk.get('level', 2)
-            }
-            for chunk in chunks
-        ]
-        ids = [f"chunk_{timestamp}_{i}" for i in range(len(chunks))]
-        
-        # vector_result = vector_service.add_documents(
-        #     texts=texts,
-        #     metadatas=metadatas,
-        #     ids=ids
-        # )
-        
-        vector_result=import_single_file(Path(file_path))
-
-        # 7. 同步到数据库表
-        # db_count = 0
-        # for i, chunk in enumerate(chunks):
-        #     kb_chunk = KnowledgeChunk(
-        #         content=chunk['content'],
-        #         source=chunk['source'],
-        #         chapter=chunk['chapter'],
-        #         section=chunk.get('section'),
-        #         keywords=extract_keywords(chunk['content']),
-        #         vector_id=ids[i],
-        #         char_count=len(chunk['content'])
-        #     )
-        #     kb_chunk.calculate_content_features()
-        #     db.session.add(kb_chunk)
-        #     db_count += 1
-        
-        # db.session.commit()
+        # 6. 统计导入后的知识块数量
+        chunks_count = KnowledgeChunk.query.filter_by(
+            source=filename,
+            is_active=True
+        ).count()
         
         print(f"✅ 文档上传成功: {filename}")
-        print(f"   知识块数: {len(chunks)}")
-        #print(f"   向量数: {vector_result.get('count', 0)}")
-        # print(f"   数据库: {db_count}")
+        print(f"   知识块数: {chunks_count}")
         
         return jsonify({
             'status': 'success',
             'message': '覆盖上传成功' if is_overwrite else '上传成功',
             'data': {
                 'file_name': filename,
-                'chunks_count': len(chunks),
+                'chunks_count': chunks_count,
                 'is_overwrite': is_overwrite
             }
         })
@@ -1978,202 +1917,166 @@ def _build_code_chat_prompt(code, features, analysis, user_message):
     ]
     
     return messages
-# ========== ⭐⭐⭐ 学习分析 API ⭐⭐⭐ ==========
+# ========== ⭐⭐⭐ 学习分析 API（权限修复版）⭐⭐⭐ ==========
 
-@app.route('/api/analytics/overview', methods=['GET'])
+@app.route('/api/analytics/heartbeat', methods=['POST'])
 @login_required
-def get_analytics_overview():
+def analytics_heartbeat():
     """
-    获取学习概览数据
-    
-    Query参数:
-        days: 统计天数 (默认30天)
+    ⭐⭐⭐ 新增：学习心跳接口 ⭐⭐⭐
+    前端每60秒调用一次，用于精确计算学习时长
+    仅记录学生角色
     """
     try:
-        days = request.args.get('days', 30, type=int)
-        user_id = g.user_id
+        data = request.get_json() or {}
+        page = data.get('page', 'chat')
+        session_id = data.get('session_id')
         
-        print(f"📊 获取用户 {user_id} 的学习概览（{days}天）")
-        
-        # 使用统计计算服务
-        overview_data = StatsCalculator.get_user_overview(user_id, days)
+        record = DataCollector.record_heartbeat(
+            user_id=g.user_id,
+            session_id=session_id,
+            page=page
+        )
         
         return jsonify({
             'status': 'success',
-            'data': overview_data
+            'recorded': record is not None
         })
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+
+@app.route('/api/analytics/overview', methods=['GET'])
+@login_required
+def analytics_overview():
+    """
+    学习概览
+    ⭐ 教师/管理员：可查看指定学生或所有学生汇总
+    ⭐ 学生自己：不可访问（前端已隐藏入口）
+    """
+    try:
+        user = User.query.get(g.user_id)
+        if not user:
+            return jsonify({'status': 'error', 'message': '用户不存在'}), 404
         
+        days = request.args.get('days', 30, type=int)
+        target_user_id = request.args.get('user_id', type=int)
+        
+        # ⭐ 学生不允许访问分析接口
+        if user.role == 'student':
+            return jsonify({'status': 'error', 'message': '无权限查看学习分析'}), 403
+        
+        # 教师/管理员查看
+        if target_user_id:
+            # 查看指定学生
+            target_user = User.query.get(target_user_id)
+            if not target_user or target_user.role != 'student':
+                return jsonify({'status': 'error', 'message': '目标用户不是学生'}), 400
+            
+            data = StatsCalculator.get_user_overview(target_user_id, days)
+        else:
+            # 查看所有学生汇总
+            data = StatsCalculator.get_all_students_overview(days)
+        
+        return jsonify({'status': 'success', 'data': data})
     except Exception as e:
         print(f"❌ 获取学习概览失败: {e}")
+        import traceback
         traceback.print_exc()
-        return jsonify({
-            'status': 'error',
-            'message': str(e)
-        }), 500
+        return jsonify({'status': 'error', 'message': str(e)}), 500
 
 
 @app.route('/api/analytics/trend', methods=['GET'])
 @login_required
-def get_learning_trend():
-    """
-    获取学习趋势数据
-    
-    Query参数:
-        days: 统计天数 (默认30天)
-    """
+def analytics_trend():
+    """学习趋势（教师/管理员查看指定学生）"""
     try:
+        user = User.query.get(g.user_id)
+        if user.role == 'student':
+            return jsonify({'status': 'error', 'message': '无权限'}), 403
+        
         days = request.args.get('days', 30, type=int)
-        user_id = g.user_id
+        target_user_id = request.args.get('user_id', type=int)
         
-        print(f"📈 获取用户 {user_id} 的学习趋势（{days}天）")
+        if not target_user_id:
+            return jsonify({'status': 'success', 'data': []})
         
-        trend_data = StatsCalculator.get_learning_trend(user_id, days)
-        
-        return jsonify({
-            'status': 'success',
-            'data': trend_data
-        })
-        
+        data = StatsCalculator.get_learning_trend(target_user_id, days)
+        return jsonify({'status': 'success', 'data': data})
     except Exception as e:
-        print(f"❌ 获取学习趋势失败: {e}")
-        return jsonify({
-            'status': 'error',
-            'message': str(e)
-        }), 500
+        return jsonify({'status': 'error', 'message': str(e)}), 500
 
 
 @app.route('/api/analytics/knowledge-mastery', methods=['GET'])
 @login_required
-def get_knowledge_mastery():
-    """
-    获取知识点掌握度数据
-    
-    Query参数:
-        days: 统计天数 (默认30天)
-    """
+def analytics_knowledge_mastery():
+    """知识点掌握度（教师/管理员查看指定学生）"""
     try:
+        user = User.query.get(g.user_id)
+        if user.role == 'student':
+            return jsonify({'status': 'error', 'message': '无权限'}), 403
+        
         days = request.args.get('days', 30, type=int)
-        user_id = g.user_id
+        target_user_id = request.args.get('user_id', type=int)
         
-        print(f"🎯 获取用户 {user_id} 的知识点掌握度（{days}天）")
+        if not target_user_id:
+            return jsonify({'status': 'success', 'data': []})
         
-        mastery_data = StatsCalculator.get_knowledge_mastery(user_id, days)
-        
-        return jsonify({
-            'status': 'success',
-            'data': mastery_data
-        })
-        
+        data = StatsCalculator.get_knowledge_mastery(target_user_id, days)
+        return jsonify({'status': 'success', 'data': data})
     except Exception as e:
-        print(f"❌ 获取知识点掌握度失败: {e}")
-        return jsonify({
-            'status': 'error',
-            'message': str(e)
-        }), 500
+        return jsonify({'status': 'error', 'message': str(e)}), 500
 
 
 @app.route('/api/analytics/weakness', methods=['GET'])
 @login_required
-def get_weakness_analysis():
-    """
-    获取薄弱环节分析
-    
-    Query参数:
-        days: 统计天数 (默认30天)
-    """
+def analytics_weakness():
+    """薄弱环节分析（教师/管理员查看指定学生）"""
     try:
+        user = User.query.get(g.user_id)
+        if user.role == 'student':
+            return jsonify({'status': 'error', 'message': '无权限'}), 403
+        
         days = request.args.get('days', 30, type=int)
-        user_id = g.user_id
+        target_user_id = request.args.get('user_id', type=int)
         
-        print(f"⚠️ 获取用户 {user_id} 的薄弱环节分析（{days}天）")
+        if not target_user_id:
+            return jsonify({'status': 'success', 'data': {}})
         
-        weakness_data = WeaknessAnalyzer.analyze_weaknesses(user_id, days)
-        
-        return jsonify({
-            'status': 'success',
-            'data': weakness_data
-        })
-        
+        data = WeaknessAnalyzer.analyze_weaknesses(target_user_id, days)
+        return jsonify({'status': 'success', 'data': data})
     except Exception as e:
-        print(f"❌ 获取薄弱环节分析失败: {e}")
-        return jsonify({
-            'status': 'error',
-            'message': str(e)
-        }), 500
+        return jsonify({'status': 'error', 'message': str(e)}), 500
 
 
-@app.route('/api/analytics/error-distribution', methods=['GET'])
+@app.route('/api/analytics/students', methods=['GET'])
 @login_required
-def get_error_distribution():
-    """获取错误分布数据"""
+def analytics_students():
+    """
+    ⭐⭐⭐ 新增：获取学生列表（供教师/管理员选择查看）⭐⭐⭐
+    """
     try:
-        user_id = g.user_id
+        user = User.query.get(g.user_id)
+        if user.role == 'student':
+            return jsonify({'status': 'error', 'message': '无权限'}), 403
         
-        print(f"📊 获取用户 {user_id} 的错误分布")
-        
-        error_data = StatsCalculator.get_error_distribution(user_id)
+        students = User.query.filter_by(role='student', is_active=True)\
+            .order_by(User.username.asc()).all()
         
         return jsonify({
             'status': 'success',
-            'data': error_data
+            'data': [
+                {
+                    'id': s.id,
+                    'username': s.username,
+                    'nickname': s.nickname or s.username,
+                    'last_login': s.last_login.isoformat() if s.last_login else None
+                }
+                for s in students
+            ]
         })
-        
     except Exception as e:
-        print(f"❌ 获取错误分布失败: {e}")
-        return jsonify({
-            'status': 'error',
-            'message': str(e)
-        }), 500
-
-
-@app.route('/api/analytics/code-quality', methods=['GET'])
-@login_required
-def get_code_quality_trend():
-    """获取代码质量趋势"""
-    try:
-        days = request.args.get('days', 30, type=int)
-        user_id = g.user_id
-        
-        print(f"💻 获取用户 {user_id} 的代码质量趋势（{days}天）")
-        
-        quality_data = StatsCalculator.get_code_quality_trend(user_id, days)
-        
-        return jsonify({
-            'status': 'success',
-            'data': quality_data
-        })
-        
-    except Exception as e:
-        print(f"❌ 获取代码质量趋势失败: {e}")
-        return jsonify({
-            'status': 'error',
-            'message': str(e)
-        }), 500
-
-
-@app.route('/api/analytics/activity-heatmap', methods=['GET'])
-@login_required
-def get_activity_heatmap():
-    """获取活动热力图数据"""
-    try:
-        days = request.args.get('days', 90, type=int)
-        user_id = g.user_id
-        
-        print(f"🔥 获取用户 {user_id} 的活动热力图（{days}天）")
-        
-        heatmap_data = StatsCalculator.get_activity_heatmap(user_id, days)
-        
-        return jsonify({
-            'status': 'success',
-            'data': heatmap_data
-        })
-        
-    except Exception as e:
-        print(f"❌ 获取活动热力图失败: {e}")
-        return jsonify({
-            'status': 'error',
-            'message': str(e)
-        }), 500
+        return jsonify({'status': 'error', 'message': str(e)}), 500
 
 
 @app.errorhandler(404)

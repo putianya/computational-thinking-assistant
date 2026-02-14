@@ -5,6 +5,22 @@
     <div class="analytics-header">
       <h2>📊 学习数据分析</h2>
       <div class="header-actions">
+        <!-- 学生选择下拉框 -->
+        <select
+          v-model="selectedStudent"
+          @change="handleStudentChange"
+          class="student-select"
+        >
+          <option :value="null">-- 全部学生汇总 --</option>
+          <option
+            v-for="s in analyticsStore.students"
+            :key="s.id"
+            :value="s.id"
+          >
+            {{ s.nickname || s.username }}
+          </option>
+        </select>
+
         <select
           v-model="selectedPeriod"
           @change="handlePeriodChange"
@@ -31,57 +47,131 @@
       </div>
     </div>
 
-    <!-- ⭐⭐⭐ 主内容区：左侧卡片 + 右侧图表 ⭐⭐⭐ -->
+    <!-- 主内容区：左侧卡片 + 右侧图表 -->
     <div class="analytics-content">
-      <!-- 左侧：统计卡片（垂直堆叠 + 可滚动） -->
+      <!-- 左侧：统计卡片 -->
       <div class="left-panel">
-        <OverviewPanel @card-click="handleCardClick" />
+        <!-- 未选择学生时显示汇总 -->
+        <div
+          v-if="
+            !selectedStudent &&
+            analyticsStore.overview?.student_count !== undefined
+          "
+          class="summary-info"
+        >
+          <p>
+            📚 共
+            <strong>{{ analyticsStore.overview.student_count }}</strong> 名学生
+          </p>
+          <p>
+            ⏱️ 总学习
+            <strong>{{
+              analyticsStore.overview.summary?.total_duration_hours || 0
+            }}</strong>
+            小时
+          </p>
+          <p>
+            💬 总提问
+            <strong>{{
+              analyticsStore.overview.summary?.total_questions || 0
+            }}</strong>
+            次
+          </p>
+        </div>
+
+        <!-- 选择了学生显示详情 -->
+        <OverviewPanel v-if="selectedStudent" @card-click="handleCardClick" />
+
+        <!-- 汇总模式下的学生排行 -->
+        <div
+          v-if="!selectedStudent && analyticsStore.overview?.students"
+          class="student-ranking"
+        >
+          <h4>📋 学习时长排行</h4>
+          <div
+            v-for="(s, index) in analyticsStore.overview.students"
+            :key="s.user_id"
+            class="rank-item"
+            @click="quickSelectStudent(s.user_id)"
+          >
+            <span class="rank-num">{{ index + 1 }}</span>
+            <span class="rank-name">{{ s.nickname || s.username }}</span>
+            <span class="rank-value">{{ s.total_duration_hours }}h</span>
+          </div>
+        </div>
       </div>
 
       <!-- 右侧：图表展示区 -->
       <div class="right-panel">
-        <!-- 空状态（未选择卡片） -->
-        <div v-if="!selectedCard" class="empty-chart">
+        <div
+          v-if="!analyticsStore.selectedCard && !selectedStudent"
+          class="empty-chart"
+        >
           <div class="empty-icon">📈</div>
-          <h3>选择左侧卡片查看详细图表</h3>
-          <p>点击任意统计卡片，右侧将展示对应的数据可视化图表</p>
+          <h3>选择学生查看详细分析</h3>
+          <p>从顶部下拉框选择学生，或点击左侧排行中的学生</p>
+        </div>
+
+        <div
+          v-else-if="!analyticsStore.selectedCard && selectedStudent"
+          class="empty-chart"
+        >
+          <div class="empty-icon">📈</div>
+          <h3>点击左侧卡片查看详细图表</h3>
+          <p>选中学生：{{ currentStudentName }}</p>
         </div>
 
         <!-- 学习时长趋势图 -->
-        <div v-else-if="selectedCard === 'duration'" class="chart-container">
-          <h3>📚 学习时长趋势</h3>
+        <div
+          v-else-if="analyticsStore.selectedCard === 'duration'"
+          class="chart-container"
+        >
+          <h3>📚 {{ currentStudentName }} - 学习时长趋势</h3>
           <TrendChart :data="analyticsStore.learningTrend" type="duration" />
         </div>
 
         <!-- 提问次数趋势图 -->
-        <div v-else-if="selectedCard === 'questions'" class="chart-container">
-          <h3>💬 提问次数趋势</h3>
+        <div
+          v-else-if="analyticsStore.selectedCard === 'questions'"
+          class="chart-container"
+        >
+          <h3>💬 {{ currentStudentName }} - 提问次数趋势</h3>
           <TrendChart :data="analyticsStore.learningTrend" type="questions" />
         </div>
 
         <!-- 代码提交趋势图 -->
-        <div v-else-if="selectedCard === 'code'" class="chart-container">
-          <h3>💻 代码提交趋势</h3>
+        <div
+          v-else-if="analyticsStore.selectedCard === 'code'"
+          class="chart-container"
+        >
+          <h3>💻 {{ currentStudentName }} - 代码提交趋势</h3>
           <TrendChart :data="analyticsStore.learningTrend" type="code" />
         </div>
 
         <!-- 正确率趋势图 -->
-        <div v-else-if="selectedCard === 'accuracy'" class="chart-container">
-          <h3>✅ 代码正确率趋势</h3>
+        <div
+          v-else-if="analyticsStore.selectedCard === 'accuracy'"
+          class="chart-container"
+        >
+          <h3>✅ {{ currentStudentName }} - 代码正确率趋势</h3>
           <TrendChart :data="analyticsStore.learningTrend" type="accuracy" />
         </div>
 
-        <!-- 活跃天数日历热力图 -->
-        <div v-else-if="selectedCard === 'active_days'" class="chart-container">
-          <h3>📅 活跃天数分布</h3>
-          <div class="heatmap-placeholder">
-            <p>🔧 日历热力图开发中...</p>
-          </div>
+        <!-- 活跃天数 -->
+        <div
+          v-else-if="analyticsStore.selectedCard === 'active_days'"
+          class="chart-container"
+        >
+          <h3>📅 {{ currentStudentName }} - 活跃天数分布</h3>
+          <div class="heatmap-placeholder"><p>🔧 日历热力图开发中...</p></div>
         </div>
 
-        <!-- 知识点查看统计 -->
-        <div v-else-if="selectedCard === 'views'" class="chart-container">
-          <h3>👁️ 知识点查看分布</h3>
+        <!-- 知识点查看 -->
+        <div
+          v-else-if="analyticsStore.selectedCard === 'views'"
+          class="chart-container"
+        >
+          <h3>👁️ {{ currentStudentName }} - 知识点查看分布</h3>
           <WeaknessChart :data="analyticsStore.knowledgeMastery" type="views" />
         </div>
       </div>
@@ -90,49 +180,94 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from "vue";
+import { ref, computed, onMounted, watch } from "vue";
 import { useAnalyticsStore } from "../../stores/analytics";
 import OverviewPanel from "./OverviewPanel.vue";
 import TrendChart from "./TrendChart.vue";
 import WeaknessChart from "./WeaknessChart.vue";
 
 const analyticsStore = useAnalyticsStore();
-const selectedPeriod = ref(30);
-const selectedCard = ref(null); // ⭐ 当前选中的卡片
+
+// ⭐⭐⭐ 使用 Store 中的持久化值初始化本地状态 ⭐⭐⭐
+const selectedPeriod = ref(analyticsStore.currentPeriod);
+const selectedStudent = ref(analyticsStore.selectedStudentId);
+
+// ⭐ 同步 Store 和本地状态
+watch(
+  () => analyticsStore.selectedStudentId,
+  (val) => {
+    selectedStudent.value = val;
+  },
+);
+
+watch(
+  () => analyticsStore.currentPeriod,
+  (val) => {
+    selectedPeriod.value = val;
+  },
+);
+
+// 当前选中学生名称
+const currentStudentName = computed(() => {
+  if (!selectedStudent.value) return "全部学生";
+  const s = analyticsStore.students.find((s) => s.id === selectedStudent.value);
+  return s ? s.nickname || s.username : "未知学生";
+});
 
 onMounted(async () => {
   console.log("📊 学习分析组件挂载");
-  await analyticsStore.loadAllData(selectedPeriod.value);
+  console.log(
+    "📦 恢复状态: 学生=",
+    analyticsStore.selectedStudentId,
+    "周期=",
+    analyticsStore.currentPeriod,
+    "卡片=",
+    analyticsStore.selectedCard,
+  );
+
+  // 先加载学生列表
+  await analyticsStore.loadStudents();
+
+  // ⭐⭐⭐ 如果有缓存的数据且 overview 已存在，不重复加载 ⭐⭐⭐
+  if (!analyticsStore.overview) {
+    await analyticsStore.loadAllData(selectedPeriod.value);
+  }
 });
 
 async function handlePeriodChange() {
-  console.log("📅 切换时间范围:", selectedPeriod.value);
-  await analyticsStore.changePeriod(selectedPeriod.value);
+  await analyticsStore.changePeriod(Number(selectedPeriod.value));
 }
 
 async function handleRefresh() {
-  console.log("🔄 刷新数据");
   await analyticsStore.refreshData();
 }
 
-// ⭐⭐⭐ 处理卡片点击 ⭐⭐⭐
+async function handleStudentChange() {
+  // ⭐ 清除卡片选中
+  analyticsStore.setSelectedCard(null);
+  await analyticsStore.selectStudent(selectedStudent.value);
+}
+
+function quickSelectStudent(userId) {
+  selectedStudent.value = userId;
+  handleStudentChange();
+}
+
+// ⭐⭐⭐ 修改：使用 Store 方法持久化卡片选择 ⭐⭐⭐
 function handleCardClick(cardType) {
-  console.log("🖱️ 点击卡片:", cardType);
-  selectedCard.value = cardType; // ⭐ 关键：更新选中状态
+  analyticsStore.setSelectedCard(cardType);
 }
 </script>
 
 <style scoped>
-/* ========== 整体布局 ========== */
 .learning-analytics {
   height: 100%;
   display: flex;
   flex-direction: column;
   background: #f5f7fa;
-  overflow: hidden; /* ⭐ 关键：防止整体滚动 */
+  overflow: hidden;
 }
 
-/* ========== 顶部工具栏 ========== */
 .analytics-header {
   display: flex;
   justify-content: space-between;
@@ -140,7 +275,7 @@ function handleCardClick(cardType) {
   padding: 20px;
   background: white;
   border-bottom: 1px solid #e0e0e0;
-  flex-shrink: 0; /* ⭐ 防止被压缩 */
+  flex-shrink: 0;
 }
 
 .analytics-header h2 {
@@ -155,6 +290,22 @@ function handleCardClick(cardType) {
   align-items: center;
 }
 
+.student-select {
+  padding: 8px 12px;
+  border: 2px solid #667eea;
+  border-radius: 6px;
+  font-size: 14px;
+  outline: none;
+  cursor: pointer;
+  background: #f0f4ff;
+  color: #333;
+  min-width: 160px;
+}
+
+.student-select:focus {
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.2);
+}
+
 .period-select {
   padding: 8px 12px;
   border: 1px solid #ddd;
@@ -162,16 +313,6 @@ function handleCardClick(cardType) {
   font-size: 14px;
   outline: none;
   cursor: pointer;
-  transition: border-color 0.2s;
-}
-
-.period-select:hover {
-  border-color: #667eea;
-}
-
-.period-select:focus {
-  border-color: #667eea;
-  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
 }
 
 .refresh-btn {
@@ -190,39 +331,25 @@ function handleCardClick(cardType) {
 
 .refresh-btn:hover:not(:disabled) {
   background: #5568d3;
-  transform: translateY(-2px);
 }
 
-.refresh-btn:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
-/* ========== ⭐⭐⭐ 主内容区布局（修复版）⭐⭐⭐ ========== */
 .analytics-content {
   flex: 1;
   display: flex;
   gap: 20px;
   padding: 20px;
-  overflow: hidden; /* ⭐ 关键：子元素自己处理滚动 */
+  overflow: hidden;
 }
 
-/* ========== 左侧面板（垂直堆叠 + 可滚动）========== */
 .left-panel {
-  width: 350px; /* ⭐ 固定宽度 */
-  flex-shrink: 0; /* ⭐ 防止被压缩 */
-  overflow-y: auto; /* ⭐ 关键：左侧可滚动 */
-  overflow-x: hidden;
-  padding-right: 10px; /* ⭐ 为滚动条留出空间 */
+  width: 350px;
+  flex-shrink: 0;
+  overflow-y: auto;
+  padding-right: 10px;
 }
 
-/* ⭐⭐⭐ 美化滚动条 ⭐⭐⭐ */
 .left-panel::-webkit-scrollbar {
   width: 6px;
-}
-
-.left-panel::-webkit-scrollbar-track {
-  background: transparent;
 }
 
 .left-panel::-webkit-scrollbar-thumb {
@@ -230,23 +357,106 @@ function handleCardClick(cardType) {
   border-radius: 3px;
 }
 
-.left-panel::-webkit-scrollbar-thumb:hover {
-  background: #a0aec0;
-}
-
-/* ========== 右侧面板（图表区域）========== */
 .right-panel {
-  flex: 1; /* ⭐ 占据剩余空间 */
+  flex: 1;
   background: white;
   border-radius: 12px;
   padding: 24px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-  overflow-y: auto; /* ⭐ 图表区域可滚动 */
+  overflow-y: auto;
   display: flex;
   flex-direction: column;
 }
 
-/* ========== 空状态 ========== */
+.summary-info {
+  background: white;
+  border-radius: 12px;
+  padding: 20px;
+  margin-bottom: 16px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+.summary-info p {
+  margin: 8px 0;
+  font-size: 15px;
+  color: #555;
+}
+
+.summary-info strong {
+  color: #667eea;
+  font-size: 18px;
+}
+
+.student-ranking {
+  background: white;
+  border-radius: 12px;
+  padding: 16px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+.student-ranking h4 {
+  margin: 0 0 12px 0;
+  font-size: 16px;
+  color: #333;
+}
+
+.rank-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s;
+  margin-bottom: 4px;
+}
+
+.rank-item:hover {
+  background: #f0f4ff;
+  transform: translateX(4px);
+}
+
+.rank-num {
+  width: 24px;
+  height: 24px;
+  background: #667eea;
+  color: white;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: bold;
+  flex-shrink: 0;
+}
+
+.rank-item:nth-child(2) .rank-num {
+  background: #ffd700;
+  color: #333;
+}
+
+.rank-item:nth-child(3) .rank-num {
+  background: #c0c0c0;
+  color: #333;
+}
+
+.rank-item:nth-child(4) .rank-num {
+  background: #cd7f32;
+  color: white;
+}
+
+.rank-name {
+  flex: 1;
+  font-size: 14px;
+  color: #333;
+}
+
+.rank-value {
+  font-size: 14px;
+  font-weight: bold;
+  color: #667eea;
+}
+
 .empty-chart {
   flex: 1;
   display: flex;
@@ -274,12 +484,10 @@ function handleCardClick(cardType) {
   font-size: 14px;
 }
 
-/* ========== 图表容器 ========== */
 .chart-container {
   flex: 1;
   display: flex;
   flex-direction: column;
-  min-height: 0; /* ⭐ 允许子元素缩小 */
 }
 
 .chart-container h3 {
@@ -288,10 +496,9 @@ function handleCardClick(cardType) {
   color: #333;
   border-bottom: 2px solid #667eea;
   padding-bottom: 10px;
-  flex-shrink: 0; /* ⭐ 标题不缩小 */
+  flex-shrink: 0;
 }
 
-/* ========== 占位图表 ========== */
 .heatmap-placeholder {
   flex: 1;
   display: flex;
@@ -303,37 +510,18 @@ function handleCardClick(cardType) {
   background: #f9f9f9;
 }
 
-/* ========== 响应式 ========== */
 @media (max-width: 1200px) {
   .analytics-content {
-    flex-direction: column; /* ⭐ 小屏幕改为上下排列 */
+    flex-direction: column;
   }
 
   .left-panel {
-    width: 100%; /* ⭐ 左侧占满宽度 */
-    max-height: 300px; /* ⭐ 限制高度 */
-    overflow-y: auto;
+    width: 100%;
+    max-height: 300px;
   }
 
   .right-panel {
-    min-height: 400px; /* ⭐ 确保图表区域有足够高度 */
-  }
-}
-
-@media (max-width: 768px) {
-  .analytics-header {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 12px;
-  }
-
-  .header-actions {
-    width: 100%;
-    justify-content: space-between;
-  }
-
-  .left-panel {
-    max-height: 250px;
+    min-height: 400px;
   }
 }
 </style>
