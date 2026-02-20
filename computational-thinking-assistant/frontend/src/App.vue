@@ -106,6 +106,24 @@ onMounted(async () => {
 onUnmounted(() => {
   stopHeartbeat();
 });
+
+// ⭐⭐⭐ 确认这个函数存在 ⭐⭐⭐
+async function handleLogout() {
+  console.log("🔘 点击退出登录按钮");
+
+  try {
+    // ⭐ 调用 Store 的 logout 方法
+    await authStore.logout();
+
+    console.log("✅ 登出成功，跳转到登录页");
+
+    // ⭐ 跳转到登录页
+    router.push("/login");
+  } catch (error) {
+    console.error("❌ 登出失败:", error);
+    alert("退出失败，请重试");
+  }
+}
 </script>
 
 <style scoped>

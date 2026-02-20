@@ -157,4 +157,56 @@ export const analyticsAPI = {
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     return response.json();
   },
+
+  /**
+   * 获取学情报告
+   */
+  async getReport(days = 30, userId = null) {
+    let url = `${API_BASE_URL}/analytics/report?days=${days}`;
+    if (userId) url += `&user_id=${userId}`;
+
+    const response = await fetch(url, {
+      method: "GET",
+      headers: getAuthHeaders(),
+    });
+
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    return response.json();
+  },
+
+  /**
+   * 下载 PDF 学情报告
+   */
+  async downloadReportPDF(days = 30, userId = null) {
+    let url = `${API_BASE_URL}/analytics/report/pdf?days=${days}`;
+    if (userId) url += `&user_id=${userId}`;
+
+    const token = localStorage.getItem("token");
+    const response = await fetch(url, {
+      method: "GET",
+      headers: { Authorization: `Bearer ${token}` },
+    });
+
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
+    // 从响应头获取文件名
+    const disposition = response.headers.get("Content-Disposition") || "";
+    const match = disposition.match(
+      /filename\*?=(?:UTF-8'')?["']?([^"';\n]+)/i,
+    );
+    let filename = match
+      ? decodeURIComponent(match[1])
+      : `学情报告_${new Date().toLocaleDateString("zh-CN").replace(/\//g, "")}.pdf`;
+
+    // 触发浏览器下载
+    const blob = await response.blob();
+    const blobUrl = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = blobUrl;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(blobUrl);
+  },
 };

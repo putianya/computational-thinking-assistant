@@ -16,7 +16,7 @@ from flask import Flask, request, jsonify, Response, g,stream_with_context
 from flask_cors import CORS
 from werkzeug.utils import secure_filename
 from sqlalchemy import or_
-
+from io import BytesIO
 # ⭐⭐⭐ 添加缺失的导入 ⭐⭐⭐
 from config import Config  # ← 这行必须存在！
 from database import db, init_db
@@ -549,6 +549,64 @@ def login():
         import traceback
         traceback.print_exc()
         return jsonify({'status': 'error', 'message': f'登录失败: {str(e)}'}), 500
+
+
+@app.route('/api/auth/logout', methods=['POST'])
+@login_required
+def logout():
+    """
+    用户退出登录
+    
+    说明：
+    - 目前采用 JWT 无状态认证，Token 存储在前端
+    - 后端无需维护 Token 黑名单（除非需要强制失效）
+    - 前端清除 localStorage 即可完成登出
+    - 此接口主要用于记录登出日志和数据统计
+    
+    返回格式：
+    {
+        "status": "success",
+        "message": "退出成功"
+    }
+    """
+    try:
+        user_id = g.user_id
+        user = User.query.get(user_id)
+        
+        if not user:
+            return jsonify({
+                'status': 'error',
+                'message': '用户不存在'
+            }), 404
+        
+        username = user.username
+        
+        print("\n" + "=" * 60)
+        print(f"👋 用户退出登录")
+        print(f"   用户ID: {user_id}")
+        print(f"   用户名: {username}")
+        print(f"   角色: {user.get_role_display()}")
+        print("=" * 60 + "\n")
+        
+        # ⭐ 可选：记录登出时间（如果需要统计在线时长）
+        # user.last_logout = datetime.now()
+        # db.session.commit()
+        
+        return jsonify({
+            'status': 'success',
+            'message': '退出成功'
+        }), 200
+        
+    except Exception as e:
+        print(f"❌ 退出登录失败: {e}")
+        import traceback
+        traceback.print_exc()
+        
+        return jsonify({
+            'status': 'error',
+            'message': f'退出失败: {str(e)}'
+        }), 500
+
 
 @app.route('/api/auth/verify', methods=['POST'])
 def verify_token():
@@ -2077,6 +2135,87 @@ def analytics_students():
         })
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)}), 500
+
+# 在学习分析 API 部分添加以下路由
+
+@app.route('/api/analytics/report', methods=['GET'])
+@login_required
+def get_learning_report():
+    """生成学情报告"""
+    try:
+        from services.analytics.report_generator import ReportGenerator
+
+        days = request.args.get('days', 30, type=int)
+        user_id = request.args.get('user_id', type=int)
+
+        # 权限控制
+        current_user = User.query.get(g.user_id)
+        if user_id and user_id != g.user_id:
+            # 非本人查看需要教师/管理员权限
+            if not current_user.has_any_permission(['manage_users', 'view_all_sessions']):
+                return jsonify({'status': 'error', 'message': '无权限查看他人报告'}), 403
+        else:
+            user_id = g.user_id
+
+        report = ReportGenerator.generate_json_report(user_id, days)
+
+        if 'error' in report:
+            return jsonify({'status': 'error', 'message': report['error']}), 400
+
+        return jsonify({'status': 'success', 'data': report})
+
+    except Exception as e:
+        print(f"❌ 生成报告失败: {e}")
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+@app.route('/api/analytics/report/pdf', methods=['GET'])
+@login_required
+def download_report_pdf():
+    """下载 PDF 学情报告"""
+    try:
+        from services.analytics.report_generator import ReportGenerator
+        from services.analytics.pdf_generator import PDFReportGenerator
+
+        days = request.args.get('days', 30, type=int)
+        user_id_param = request.args.get('user_id', type=int)
+
+        # 权限控制
+        current_user = User.query.get(g.user_id)
+        if user_id_param and current_user.role in ['teacher', 'admin']:
+            target_user_id = user_id_param
+        else:
+            target_user_id = g.user_id
+
+        # 生成报告数据
+        report_data = ReportGenerator.generate_json_report(target_user_id, days)
+
+        if not report_data:
+            return jsonify({'status': 'error', 'message': '报告数据生成失败'}), 500
+
+        # 生成 PDF
+        pdf_gen = PDFReportGenerator()
+        pdf_bytes = pdf_gen.generate(report_data)
+
+        # 构造文件名
+        user = User.query.get(target_user_id)
+        username = (user.nickname or user.username) if user else "student"
+        filename = f"学情报告_{username}_{datetime.now().strftime('%Y%m%d')}.pdf"
+
+        # 返回 PDF 下载
+        from flask import send_file
+        return send_file(
+            BytesIO(pdf_bytes),
+            mimetype='application/pdf',
+            as_attachment=True,
+            download_name=filename
+        )
+
+    except Exception as e:
+        print(f"❌ PDF 生成失败: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'status': 'error', 'message': f'PDF 生成失败: {str(e)}'}), 500
+
 
 
 @app.errorhandler(404)

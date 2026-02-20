@@ -1,16 +1,18 @@
 <!-- filepath: s:\Python__GraduationProject\computational-thinking-assistant\frontend\src\components\analytics\LearningAnalytics.vue -->
 <template>
   <div class="learning-analytics">
-    <!-- 顶部工具栏 -->
+    <!-- 顶部 Header -->
     <div class="analytics-header">
-      <h2>📊 学习数据分析</h2>
+      <h2>📊 学习分析</h2>
       <div class="header-actions">
+        <!-- 教师/管理员才显示学生选择 -->
         <select
+          v-if="isTeacherOrAdmin"
           v-model="selectedStudent"
           @change="handleStudentChange"
           class="student-select"
         >
-          <option :value="null">-- 全部学生汇总 --</option>
+          <option :value="null">-- 选择学生 --</option>
           <option
             v-for="s in analyticsStore.students"
             :key="s.id"
@@ -25,9 +27,9 @@
           @change="handlePeriodChange"
           class="period-select"
         >
-          <option value="7">最近7天</option>
-          <option value="30">最近30天</option>
-          <option value="90">最近90天</option>
+          <option :value="7">最近 7 天</option>
+          <option :value="30">最近 30 天</option>
+          <option :value="90">最近 90 天</option>
         </select>
 
         <button
@@ -36,168 +38,170 @@
           class="refresh-btn"
         >
           <i
-            :class="[
-              'fas fa-sync-alt',
-              { 'fa-spin': analyticsStore.isLoading },
-            ]"
+            class="fas fa-sync-alt"
+            :class="{ 'fa-spin': analyticsStore.isLoading }"
           ></i>
           刷新
         </button>
       </div>
     </div>
 
-    <!-- 主内容区 -->
-    <div class="analytics-content">
-      <!-- 左侧：统计卡片 -->
+    <!-- Tab 切换 -->
+    <div class="analytics-tabs">
+      <button
+        :class="['tab-btn', { active: activeTab === 'dashboard' }]"
+        @click="activeTab = 'dashboard'"
+      >
+        <i class="fas fa-chart-bar"></i> 数据看板
+      </button>
+      <button
+        :class="['tab-btn', { active: activeTab === 'report' }]"
+        @click="activeTab = 'report'"
+      >
+        <i class="fas fa-file-alt"></i> 学情报告
+      </button>
+    </div>
+
+    <!-- 数据看板 -->
+    <div v-show="activeTab === 'dashboard'" class="analytics-content">
+      <!-- 左侧：概览卡片 -->
       <div class="left-panel">
-        <!-- 未选择学生时显示汇总 -->
-        <div
-          v-if="
-            !selectedStudent &&
-            analyticsStore.overview?.student_count !== undefined
-          "
-          class="summary-info"
-        >
+        <!-- 当前查看的学生信息 -->
+        <div class="summary-info" v-if="isTeacherOrAdmin">
           <p>
-            📚 共
-            <strong>{{ analyticsStore.overview.student_count }}</strong> 名学生
+            当前查看：<strong>{{ currentStudentName }}</strong>
           </p>
           <p>
-            ⏱️ 总学习
-            <strong>{{
-              analyticsStore.overview.summary?.total_duration_hours || 0
-            }}</strong>
-            小时
-          </p>
-          <p>
-            💬 总提问
-            <strong>{{
-              analyticsStore.overview.summary?.total_questions || 0
-            }}</strong>
-            次
+            统计周期：<strong
+              >最近 {{ analyticsStore.currentPeriod }} 天</strong
+            >
           </p>
         </div>
 
-        <!-- 选择了学生显示详情 -->
-        <OverviewPanel v-if="selectedStudent" @card-click="handleCardClick" />
+        <!-- 概览卡片 -->
+        <OverviewPanel @card-click="handleCardClick" />
 
-        <!-- 汇总模式下的学生排行 -->
+        <!-- 学生排行榜（教师/管理员可见） -->
         <div
-          v-if="!selectedStudent && analyticsStore.overview?.students"
           class="student-ranking"
+          v-if="isTeacherOrAdmin && analyticsStore.students.length > 0"
         >
-          <h4>📋 学习时长排行</h4>
+          <h4>🏆 学生活跃排行</h4>
           <div
-            v-for="(s, index) in analyticsStore.overview.students"
-            :key="s.user_id"
+            v-for="(s, index) in analyticsStore.students.slice(0, 5)"
+            :key="s.id"
             class="rank-item"
-            @click="quickSelectStudent(s.user_id)"
+            @click="quickSelectStudent(s.id)"
           >
-            <span class="rank-num" :class="getRankClass(index)">{{
-              index + 1
-            }}</span>
-            <span class="rank-name">{{ s.nickname || s.username }}</span>
-            <span class="rank-value">{{ s.total_duration_hours }}h</span>
+            <div class="rank-num" :class="getRankClass(index)">
+              {{ index + 1 }}
+            </div>
+            <div class="rank-name">{{ s.nickname || s.username }}</div>
+            <div class="rank-value">{{ s.active_days || 0 }}天</div>
           </div>
         </div>
       </div>
 
-      <!-- 右侧：图表展示区 -->
+      <!-- 右侧：图表区域 -->
       <div class="right-panel">
-        <!-- 空状态：未选择学生 -->
-        <div
-          v-if="!analyticsStore.selectedCard && !selectedStudent"
-          class="empty-chart"
-        >
-          <div class="empty-icon">📈</div>
-          <h3>选择学生查看详细分析</h3>
-          <p>从顶部下拉框选择学生，或点击左侧排行中的学生</p>
+        <!-- 未选择学生提示（教师/管理员） -->
+        <div v-if="isTeacherOrAdmin && !selectedStudent" class="empty-chart">
+          <div class="empty-icon">👈</div>
+          <h3>请选择学生</h3>
+          <p>在左侧选择学生后查看详细分析数据</p>
         </div>
 
-        <!-- 空状态：已选择学生但未选择卡片 -->
-        <div
-          v-else-if="!analyticsStore.selectedCard && selectedStudent"
-          class="empty-chart"
-        >
-          <div class="empty-icon">📈</div>
-          <h3>点击左侧卡片查看详细图表</h3>
-          <p>选中学生：{{ currentStudentName }}</p>
+        <!-- 未选择卡片提示 -->
+        <div v-else-if="!analyticsStore.selectedCard" class="empty-chart">
+          <div class="empty-icon">📊</div>
+          <h3>点击左侧卡片</h3>
+          <p>选择一个统计指标查看详细趋势图</p>
         </div>
 
-        <!-- 📚 学习时长趋势（折线图） -->
-        <div
-          v-else-if="analyticsStore.selectedCard === 'duration'"
-          class="chart-container"
-        >
-          <h3>📚 {{ currentStudentName }} - 学习时长趋势</h3>
-          <TrendChart :data="analyticsStore.learningTrend" type="duration" />
-        </div>
+        <!-- 图表内容 -->
+        <div v-else class="chart-container">
+          <!-- 学习时长趋势 -->
+          <div v-if="analyticsStore.selectedCard === 'duration'">
+            <h3>📚 学习时长趋势</h3>
+            <TrendChart :data="analyticsStore.learningTrend" type="duration" />
+          </div>
 
-        <!-- 💬 提问次数趋势（柱状图） -->
-        <div
-          v-else-if="analyticsStore.selectedCard === 'questions'"
-          class="chart-container"
-        >
-          <h3>💬 {{ currentStudentName }} - 提问次数趋势</h3>
-          <TrendChart :data="analyticsStore.learningTrend" type="questions" />
-        </div>
+          <!-- 提问次数趋势 -->
+          <div v-else-if="analyticsStore.selectedCard === 'questions'">
+            <h3>💬 提问次数趋势</h3>
+            <TrendChart :data="analyticsStore.learningTrend" type="questions" />
+          </div>
 
-        <!-- 💻 代码提交（双轴折线图） -->
-        <div
-          v-else-if="analyticsStore.selectedCard === 'code'"
-          class="chart-container"
-        >
-          <h3>💻 {{ currentStudentName }} - 代码提交趋势</h3>
-          <TrendChart :data="analyticsStore.learningTrend" type="code" />
-        </div>
+          <!-- 代码提交趋势 -->
+          <div v-else-if="analyticsStore.selectedCard === 'code'">
+            <h3>💻 代码提交趋势</h3>
+            <TrendChart :data="analyticsStore.learningTrend" type="code" />
+          </div>
 
-        <!-- ✅ 代码正确率（仪表盘+趋势线） -->
-        <div
-          v-else-if="analyticsStore.selectedCard === 'accuracy'"
-          class="chart-container"
-        >
-          <h3>✅ {{ currentStudentName }} - 代码正确率</h3>
-          <TrendChart :data="analyticsStore.learningTrend" type="accuracy" />
-        </div>
+          <!-- 代码正确率 -->
+          <div v-else-if="analyticsStore.selectedCard === 'accuracy'">
+            <h3>✅ 代码正确率趋势</h3>
+            <TrendChart :data="analyticsStore.learningTrend" type="accuracy" />
+          </div>
 
-        <!-- 📅 活跃天数（日历热力图） -->
-        <div
-          v-else-if="analyticsStore.selectedCard === 'active_days'"
-          class="chart-container"
-        >
-          <h3>📅 {{ currentStudentName }} - 活跃天数分布</h3>
-          <ActivityHeatmap
-            :data="analyticsStore.learningTrend"
-            :days="Number(selectedPeriod)"
-          />
-        </div>
+          <!-- 活跃天数 / 热力图 -->
+          <div v-else-if="analyticsStore.selectedCard === 'active_days'">
+            <h3>📅 学习活跃热力图</h3>
+            <ActivityHeatmap
+              :data="analyticsStore.activityHeatmap || []"
+              :days="analyticsStore.currentPeriod"
+            />
+          </div>
 
-        <!-- 👁️ 知识点查看（横向柱状图） -->
-        <div
-          v-else-if="analyticsStore.selectedCard === 'views'"
-          class="chart-container"
-        >
-          <h3>👁️ {{ currentStudentName }} - 知识点查看分布</h3>
-          <WeaknessChart :data="analyticsStore.knowledgeMastery" type="views" />
+          <!-- 知识点分布 -->
+          <div v-else-if="analyticsStore.selectedCard === 'views'">
+            <h3>👁️ 知识点查看分布</h3>
+            <WeaknessChart
+              :data="analyticsStore.knowledgeMastery"
+              type="views"
+            />
+          </div>
         </div>
       </div>
+    </div>
+
+    <!-- 学情报告 -->
+    <div v-show="activeTab === 'report'" class="report-area">
+      <ReportExport />
     </div>
   </div>
 </template>
 
 <script setup>
 import { ref, computed, onMounted, watch } from "vue";
+import { useAuthStore } from "../../stores/user";
 import { useAnalyticsStore } from "../../stores/analytics";
 import OverviewPanel from "./OverviewPanel.vue";
 import TrendChart from "./TrendChart.vue";
 import WeaknessChart from "./WeaknessChart.vue";
 import ActivityHeatmap from "./ActivityHeatmap.vue";
+import ReportExport from "./ReportExport.vue";
 
+const authStore = useAuthStore();
 const analyticsStore = useAnalyticsStore();
 
+// ========== 响应式状态 ==========
+const activeTab = ref("dashboard");
 const selectedPeriod = ref(analyticsStore.currentPeriod);
 const selectedStudent = ref(analyticsStore.selectedStudentId);
 
+// ========== 计算属性 ==========
+const isTeacherOrAdmin = computed(() =>
+  authStore.hasAnyRole(["teacher", "admin"]),
+);
+
+const currentStudentName = computed(() => {
+  if (!selectedStudent.value) return "全部学生";
+  const s = analyticsStore.students.find((s) => s.id === selectedStudent.value);
+  return s ? s.nickname || s.username : "未知学生";
+});
+
+// ========== 同步 store 状态变化 ==========
 watch(
   () => analyticsStore.selectedStudentId,
   (val) => {
@@ -212,27 +216,16 @@ watch(
   },
 );
 
-const currentStudentName = computed(() => {
-  if (!selectedStudent.value) return "全部学生";
-  const s = analyticsStore.students.find((s) => s.id === selectedStudent.value);
-  return s ? s.nickname || s.username : "未知学生";
-});
-
-function getRankClass(index) {
-  if (index === 0) return "gold";
-  if (index === 1) return "silver";
-  if (index === 2) return "bronze";
-  return "";
-}
-
+// ========== 生命周期 ==========
 onMounted(async () => {
   console.log("📊 学习分析组件挂载");
   await analyticsStore.loadStudents();
   if (!analyticsStore.overview) {
-    await analyticsStore.loadAllData(selectedPeriod.value);
+    await analyticsStore.loadAllData(analyticsStore.currentPeriod);
   }
 });
 
+// ========== 事件处理 ==========
 async function handlePeriodChange() {
   await analyticsStore.changePeriod(Number(selectedPeriod.value));
 }
@@ -246,13 +239,20 @@ async function handleStudentChange() {
   await analyticsStore.selectStudent(selectedStudent.value);
 }
 
-function quickSelectStudent(userId) {
+async function quickSelectStudent(userId) {
   selectedStudent.value = userId;
-  handleStudentChange();
+  await handleStudentChange();
 }
 
 function handleCardClick(cardType) {
   analyticsStore.setSelectedCard(cardType);
+}
+
+function getRankClass(index) {
+  if (index === 0) return "gold";
+  if (index === 1) return "silver";
+  if (index === 2) return "bronze";
+  return "";
 }
 </script>
 
@@ -265,11 +265,12 @@ function handleCardClick(cardType) {
   overflow: hidden;
 }
 
+/* ========== Header ========== */
 .analytics-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 20px;
+  padding: 16px 20px;
   background: white;
   border-bottom: 1px solid #e0e0e0;
   flex-shrink: 0;
@@ -277,7 +278,7 @@ function handleCardClick(cardType) {
 
 .analytics-header h2 {
   margin: 0;
-  font-size: 22px;
+  font-size: 20px;
   color: #333;
 }
 
@@ -285,24 +286,10 @@ function handleCardClick(cardType) {
   display: flex;
   gap: 12px;
   align-items: center;
+  flex-wrap: wrap;
 }
 
-.student-select {
-  padding: 8px 12px;
-  border: 2px solid #667eea;
-  border-radius: 6px;
-  font-size: 14px;
-  outline: none;
-  cursor: pointer;
-  background: #f0f4ff;
-  color: #333;
-  min-width: 160px;
-}
-
-.student-select:focus {
-  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.2);
-}
-
+.student-select,
 .period-select {
   padding: 8px 12px;
   border: 1px solid #ddd;
@@ -310,6 +297,13 @@ function handleCardClick(cardType) {
   font-size: 14px;
   outline: none;
   cursor: pointer;
+  min-width: 140px;
+}
+
+.student-select {
+  border-color: #667eea;
+  background: #f0f4ff;
+  color: #333;
 }
 
 .refresh-btn {
@@ -329,7 +323,46 @@ function handleCardClick(cardType) {
 .refresh-btn:hover:not(:disabled) {
   background: #5568d3;
 }
+.refresh-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
 
+/* ========== Tabs ========== */
+.analytics-tabs {
+  display: flex;
+  gap: 8px;
+  padding: 10px 16px;
+  background: white;
+  border-bottom: 1px solid #e0e0e0;
+  flex-shrink: 0;
+}
+
+.tab-btn {
+  padding: 8px 20px;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  background: white;
+  cursor: pointer;
+  font-size: 14px;
+  color: #666;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.2s;
+}
+
+.tab-btn:hover {
+  border-color: #667eea;
+  color: #667eea;
+}
+.tab-btn.active {
+  background: #667eea;
+  border-color: #667eea;
+  color: white;
+}
+
+/* ========== Content ========== */
 .analytics-content {
   flex: 1;
   display: flex;
@@ -338,11 +371,14 @@ function handleCardClick(cardType) {
   overflow: hidden;
 }
 
+/* ========== Left Panel ========== */
 .left-panel {
-  width: 350px;
+  width: 280px;
   flex-shrink: 0;
   overflow-y: auto;
-  padding-right: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
 }
 
 .left-panel::-webkit-scrollbar {
@@ -353,33 +389,20 @@ function handleCardClick(cardType) {
   border-radius: 3px;
 }
 
-.right-panel {
-  flex: 1;
-  background: white;
-  border-radius: 12px;
-  padding: 24px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-  overflow-y: auto;
-  display: flex;
-  flex-direction: column;
-}
-
 .summary-info {
   background: white;
   border-radius: 12px;
-  padding: 20px;
-  margin-bottom: 16px;
+  padding: 16px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
 }
 
 .summary-info p {
-  margin: 8px 0;
-  font-size: 15px;
+  margin: 6px 0;
+  font-size: 14px;
   color: #555;
 }
 .summary-info strong {
   color: #667eea;
-  font-size: 18px;
 }
 
 .student-ranking {
@@ -391,7 +414,7 @@ function handleCardClick(cardType) {
 
 .student-ranking h4 {
   margin: 0 0 12px 0;
-  font-size: 16px;
+  font-size: 15px;
   color: #333;
 }
 
@@ -399,7 +422,7 @@ function handleCardClick(cardType) {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 10px 12px;
+  padding: 8px 10px;
   border-radius: 8px;
   cursor: pointer;
   transition: all 0.2s;
@@ -449,24 +472,37 @@ function handleCardClick(cardType) {
   color: #667eea;
 }
 
+/* ========== Right Panel ========== */
+.right-panel {
+  flex: 1;
+  background: white;
+  border-radius: 12px;
+  padding: 24px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+
 .empty-chart {
   flex: 1;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  text-align: center;
   color: #999;
+  text-align: center;
 }
 
 .empty-icon {
-  font-size: 80px;
-  margin-bottom: 20px;
+  font-size: 64px;
+  margin-bottom: 16px;
   opacity: 0.5;
 }
+
 .empty-chart h3 {
-  margin: 0 0 12px 0;
-  font-size: 20px;
+  margin: 0 0 8px 0;
+  font-size: 18px;
   color: #666;
 }
 .empty-chart p {
@@ -479,23 +515,35 @@ function handleCardClick(cardType) {
   display: flex;
   flex-direction: column;
 }
-
 .chart-container h3 {
-  margin: 0 0 20px 0;
-  font-size: 18px;
+  margin: 0 0 16px 0;
+  font-size: 17px;
   color: #333;
-  border-bottom: 2px solid #667eea;
-  padding-bottom: 10px;
-  flex-shrink: 0;
 }
 
+/* ========== Report Area ========== */
+.report-area {
+  flex: 1;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ========== 响应式 ========== */
 @media (max-width: 1200px) {
+  .left-panel {
+    width: 240px;
+  }
+}
+
+@media (max-width: 900px) {
   .analytics-content {
     flex-direction: column;
+    overflow-y: auto;
   }
   .left-panel {
     width: 100%;
-    max-height: 300px;
+    overflow: visible;
   }
   .right-panel {
     min-height: 400px;
