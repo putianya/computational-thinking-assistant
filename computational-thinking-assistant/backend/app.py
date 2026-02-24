@@ -943,6 +943,7 @@ def delete_document(filename):
 
 @app.route('/api/knowledge/stats', methods=['GET'])
 @login_required
+@require_permission('view_knowledge_stats')
 def get_knowledge_stats():
     """
     获取知识库统计信息
@@ -1037,20 +1038,9 @@ def delete_knowledge_chunk(chunk_id):
     }
     """
     try:
-        # ========== 1. 权限检查 ==========
-        from models.user import User
-        user = User.query.get(g.user_id)
-        
-        if not user or not user.has_permission('delete_knowledge'):
-            print(f"❌ 无权限删除知识块: 用户 {g.user_id}")
-            return jsonify({
-                'status': 'error',
-                'message': '无权限执行此操作，需要教师或管理员权限'
-            }), 403
-        
         print(f"\n{'='*60}")
         print(f"🗑️ 删除知识块请求")
-        print(f"   操作用户: {user.username} ({user.get_role_display()})")
+        print(f"   操作用户: {g.user.username} ({g.user.get_role_display()})")
         print(f"   知识块ID: {chunk_id}")
         print(f"{'='*60}")
         
@@ -1146,20 +1136,9 @@ def update_knowledge_chunk(chunk_id):
     }
     """
     try:
-        # ========== 1. 权限检查 ==========
-        from models.user import User
-        user = User.query.get(g.user_id)
-        
-        if not user or not user.has_permission('edit_knowledge'):
-            print(f"❌ 无权限编辑知识块: 用户 {g.user_id}")
-            return jsonify({
-                'status': 'error',
-                'message': '无权限执行此操作，需要教师或管理员权限'
-            }), 403
-        
         print(f"\n{'='*60}")
         print(f"✏️ 编辑知识块请求")
-        print(f"   操作用户: {user.username} ({user.get_role_display()})")
+        print(f"   操作用户: {g.user.username} ({g.user.get_role_display()})")
         print(f"   知识块ID: {chunk_id}")
         print(f"{'='*60}")
         
@@ -1327,7 +1306,7 @@ def update_knowledge_chunk(chunk_id):
 
 @app.route('/api/admin/users', methods=['GET'])
 @login_required
-@require_role('admin')
+@require_permission('manage_users')
 def get_all_users():
     """
     获取所有用户列表
@@ -2006,6 +1985,7 @@ def analytics_heartbeat():
 
 @app.route('/api/analytics/overview', methods=['GET'])
 @login_required
+@require_permission('view_analytics')
 def analytics_overview():
     """
     学习概览
@@ -2013,16 +1993,10 @@ def analytics_overview():
     ⭐ 学生自己：不可访问（前端已隐藏入口）
     """
     try:
-        user = User.query.get(g.user_id)
-        if not user:
-            return jsonify({'status': 'error', 'message': '用户不存在'}), 404
+        user = g.user
         
         days = request.args.get('days', 30, type=int)
         target_user_id = request.args.get('user_id', type=int)
-        
-        # ⭐ 学生不允许访问分析接口
-        if user.role == 'student':
-            return jsonify({'status': 'error', 'message': '无权限查看学习分析'}), 403
         
         # 教师/管理员查看
         if target_user_id:
@@ -2046,13 +2020,10 @@ def analytics_overview():
 
 @app.route('/api/analytics/trend', methods=['GET'])
 @login_required
+@require_permission('view_analytics')
 def analytics_trend():
     """学习趋势（教师/管理员查看指定学生）"""
     try:
-        user = User.query.get(g.user_id)
-        if user.role == 'student':
-            return jsonify({'status': 'error', 'message': '无权限'}), 403
-        
         days = request.args.get('days', 30, type=int)
         target_user_id = request.args.get('user_id', type=int)
         
@@ -2067,13 +2038,10 @@ def analytics_trend():
 
 @app.route('/api/analytics/knowledge-mastery', methods=['GET'])
 @login_required
+@require_permission('view_analytics')
 def analytics_knowledge_mastery():
     """知识点掌握度（教师/管理员查看指定学生）"""
     try:
-        user = User.query.get(g.user_id)
-        if user.role == 'student':
-            return jsonify({'status': 'error', 'message': '无权限'}), 403
-        
         days = request.args.get('days', 30, type=int)
         target_user_id = request.args.get('user_id', type=int)
         
@@ -2088,13 +2056,10 @@ def analytics_knowledge_mastery():
 
 @app.route('/api/analytics/weakness', methods=['GET'])
 @login_required
+@require_permission('view_analytics')
 def analytics_weakness():
     """薄弱环节分析（教师/管理员查看指定学生）"""
     try:
-        user = User.query.get(g.user_id)
-        if user.role == 'student':
-            return jsonify({'status': 'error', 'message': '无权限'}), 403
-        
         days = request.args.get('days', 30, type=int)
         target_user_id = request.args.get('user_id', type=int)
         
@@ -2109,15 +2074,12 @@ def analytics_weakness():
 
 @app.route('/api/analytics/students', methods=['GET'])
 @login_required
+@require_permission('view_analytics')
 def analytics_students():
     """
     ⭐⭐⭐ 新增：获取学生列表（供教师/管理员选择查看）⭐⭐⭐
     """
     try:
-        user = User.query.get(g.user_id)
-        if user.role == 'student':
-            return jsonify({'status': 'error', 'message': '无权限'}), 403
-        
         students = User.query.filter_by(role='student', is_active=True)\
             .order_by(User.username.asc()).all()
         
