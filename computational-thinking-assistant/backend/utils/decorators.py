@@ -175,7 +175,14 @@ def require_role(*roles):
                     'message': '用户不存在'
                 }), 404
             
-            # 3. 检查角色
+            # 3. 检查用户是否激活
+            if not user.is_active:
+                return jsonify({
+                    'status': 'error',
+                    'message': '用户已被禁用'
+                }), 403
+            
+            # 4. 检查角色
             if user.role not in roles:
                 print(f"❌ 角色不匹配: 用户 {user.username} 是 {user.role}，需要 {roles}")
                 return jsonify({
@@ -185,12 +192,12 @@ def require_role(*roles):
                     'user_role': user.role
                 }), 403
             
-            # 4. 角色匹配，存储用户对象
+            # 5. 角色匹配，存储用户对象
             g.user = user
             
             print(f"✅ 角色验证通过: {user.username}({user.role})")
             
-            # 5. 执行原函数
+            # 6. 执行原函数
             return f(*args, **kwargs)
         
         return decorated_function

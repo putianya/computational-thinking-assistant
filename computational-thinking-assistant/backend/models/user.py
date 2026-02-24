@@ -54,6 +54,9 @@ class User(db.Model):
         'edit_knowledge': ['teacher', 'admin'],                    # 编辑知识块
         'view_knowledge_stats': ['teacher', 'admin'],              # 查看知识库统计
         
+        # 学习分析（教师、管理员）
+        'view_analytics': ['teacher', 'admin'],                    # 查看学习分析
+        
         # 用户管理（仅管理员）
         'manage_users': ['admin'],                                 # 管理用户
         'view_all_sessions': ['admin'],                            # 查看所有会话
@@ -264,6 +267,9 @@ class User(db.Model):
             'delete_knowledge': '删除知识块',
             'edit_knowledge': '编辑知识块',
             'view_knowledge_stats': '查看知识库统计',
+            
+            # 学习分析
+            'view_analytics': '查看学习分析',
             
             # 用户管理
             'manage_users': '管理用户',
