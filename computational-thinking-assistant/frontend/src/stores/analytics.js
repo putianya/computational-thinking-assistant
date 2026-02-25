@@ -269,12 +269,10 @@ export const useAnalyticsStore = defineStore("analytics", () => {
     weaknessAnalysis.value = null;
     errorDistribution.value = null;
     codeQualityTrend.value = [];
-<<<<<<<<< Temporary merge branch 1
+
     activityHeatmap.value = [];
-=========
-    activityHeatmap.value = null;
     knowledgeChunkStats.value = null;
->>>>>>>>> Temporary merge branch 2
+
     isLoading.value = false;
     currentPeriod.value = 30;
     students.value = [];
@@ -310,11 +308,11 @@ export const useAnalyticsStore = defineStore("analytics", () => {
     loadLearningTrend,
     loadKnowledgeMastery,
     loadWeaknessAnalysis,
-<<<<<<<<< Temporary merge branch 1
+
     loadActivityHeatmap,
-=========
+
     loadKnowledgeChunkStats,
->>>>>>>>> Temporary merge branch 2
+
     loadAllData,
     refreshData,
     changePeriod,
