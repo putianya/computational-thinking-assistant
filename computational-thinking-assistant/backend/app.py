@@ -2098,7 +2098,18 @@ def analytics_students():
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
-# 在学习分析 API 部分添加以下路由
+@app.route('/api/analytics/knowledge-chunk-stats', methods=['GET'])
+@login_required
+@require_permission('view_analytics')
+def analytics_knowledge_chunk_stats():
+    """知识块引用热度统计（教师/管理员）"""
+    try:
+        limit = request.args.get('limit', 20, type=int)
+        data = StatsCalculator.get_knowledge_chunk_stats(limit)
+        return jsonify({'status': 'success', 'data': data})
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
 
 @app.route('/api/analytics/report', methods=['GET'])
 @login_required

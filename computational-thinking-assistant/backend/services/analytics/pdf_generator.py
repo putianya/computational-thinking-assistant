@@ -152,10 +152,13 @@ class PDFReportGenerator:
         # ========== 5. 薄弱环节 ==========
         story += self._build_weakness(report_data)
 
-        # ========== 6. 学习建议 ==========
+        # ========== 6. 知识块引用热度 ==========
+        story += self._build_chunk_heat(report_data)
+
+        # ========== 7. 学习建议 ==========
         story += self._build_recommendations(report_data)
 
-        # ========== 7. 页脚 ==========
+        # ========== 8. 页脚 ==========
         story += self._build_footer(report_data)
 
         doc.build(story)
@@ -477,13 +480,66 @@ class PDFReportGenerator:
         elements.append(Spacer(1, 0.3 * cm))
         return elements
 
+    # ========== 知识块引用热度 ==========
+    def _build_chunk_heat(self, data: dict) -> list:
+        elements = []
+        s = self.styles
+        chunk_stats = data.get('knowledge_chunk_stats') or {}
+        chunks = chunk_stats.get('chunks', [])
+
+        elements.append(Paragraph("五、知识块引用热度 Top 10", s['section_title']))
+        elements.append(HRFlowable(
+            width="100%", thickness=1,
+            color=self.COLOR_BORDER, spaceAfter=8
+        ))
+
+        if not chunks:
+            elements.append(Paragraph("暂无知识块引用数据", s['body']))
+            return elements
+
+        total_retrieved = chunk_stats.get('total_retrieved', 0)
+        elements.append(Paragraph(
+            f"知识块总引用次数：{total_retrieved}",
+            s['body']
+        ))
+        elements.append(Spacer(1, 0.2 * cm))
+
+        rows = [["排名", "来源", "章节", "引用次数", "占比"]]
+        for i, chunk in enumerate(chunks[:10], 1):
+            rows.append([
+                str(i),
+                (chunk.get('source') or '')[:20],
+                ((chunk.get('chapter') or '') + (' / ' + chunk.get('section') if chunk.get('section') else ''))[:20],
+                str(chunk.get('retrieved_count', 0)),
+                f"{chunk.get('heat_rate', 0)}%",
+            ])
+
+        table = Table(rows, colWidths=[1.5 * cm, 5 * cm, 5 * cm, 3 * cm, 2.5 * cm])
+        table.setStyle(TableStyle([
+            ('FONTNAME', (0, 0), (-1, -1), self.font_name),
+            ('FONTNAME', (0, 0), (-1, 0), self.font_bold),
+            ('FONTSIZE', (0, 0), (-1, -1), 9),
+            ('BACKGROUND', (0, 0), (-1, 0), self.COLOR_PRIMARY),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+            ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, self.COLOR_LIGHT_BG]),
+            ('GRID', (0, 0), (-1, -1), 0.5, self.COLOR_BORDER),
+            ('ALIGN', (0, 0), (0, -1), 'CENTER'),
+            ('ALIGN', (3, 0), (-1, -1), 'CENTER'),
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+            ('TOPPADDING', (0, 0), (-1, -1), 6),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+        ]))
+        elements.append(table)
+        elements.append(Spacer(1, 0.3 * cm))
+        return elements
+
     # ========== 学习建议 ==========
     def _build_recommendations(self, data: dict) -> list:
         elements = []
         s = self.styles
         recs = data.get("recommendations", [])
 
-        elements.append(Paragraph("五、个性化学习建议", s["section_title"]))
+        elements.append(Paragraph("六、个性化学习建议", s["section_title"]))
         elements.append(HRFlowable(
             width="100%", thickness=1,
             color=self.COLOR_BORDER, spaceAfter=8
