@@ -159,6 +159,19 @@ export const analyticsAPI = {
   },
 
   /**
+   * 获取知识块引用热度统计
+   */
+  async getKnowledgeChunkStats(limit = 20) {
+    const url = `${API_BASE_URL}/analytics/knowledge-chunk-stats?limit=${limit}`;
+    const response = await fetch(url, {
+      method: "GET",
+      headers: getAuthHeaders(),
+    });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    return response.json();
+  },
+
+  /**
    * 获取学情报告
    */
   async getReport(days = 30, userId = null) {

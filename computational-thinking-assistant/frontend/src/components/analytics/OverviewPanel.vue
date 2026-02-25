@@ -80,6 +80,18 @@
         </div>
         <i class="arrow-icon fas fa-chevron-right"></i>
       </div>
+
+      <!-- ⭐ 知识块热度 -->
+      <div class="stat-card" @click="handleCardClick('chunk_heat')">
+        <div class="stat-icon">🔥</div>
+        <div class="stat-content">
+          <div class="stat-value">
+            {{ analyticsStore.knowledgeChunkStats?.total_retrieved || 0 }}
+          </div>
+          <div class="stat-label">知识块总引用</div>
+        </div>
+        <i class="arrow-icon fas fa-chevron-right"></i>
+      </div>
     </template>
   </div>
 </template>

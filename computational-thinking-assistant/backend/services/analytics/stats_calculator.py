@@ -403,6 +403,42 @@ class StatsCalculator:
         return result
     
     @staticmethod
+    def get_knowledge_chunk_stats(limit: int = 20):
+        """
+        获取知识块引用热度统计
+        按 retrieved_count 降序排列，返回热门知识块列表
+        """
+        from models.knowledge_chunk import KnowledgeChunk
+
+        chunks = KnowledgeChunk.query.filter_by(is_active=True)\
+            .order_by(KnowledgeChunk.retrieved_count.desc())\
+            .limit(limit)\
+            .all()
+
+        total_retrieved = sum(c.retrieved_count or 0 for c in chunks)
+
+        result = []
+        for chunk in chunks:
+            count = chunk.retrieved_count or 0
+            result.append({
+                'id': chunk.id,
+                'source': chunk.source,
+                'chapter': chunk.chapter or '',
+                'section': chunk.section or '',
+                'retrieved_count': count,
+                'heat_rate': round(count / total_retrieved * 100, 1) if total_retrieved > 0 else 0,
+                'last_retrieved_at': chunk.last_retrieved_at.isoformat() if chunk.last_retrieved_at else None,
+                'char_count': chunk.char_count or 0,
+                'has_code': chunk.has_code or False,
+            })
+
+        return {
+            'chunks': result,
+            'total_retrieved': total_retrieved,
+            'total_chunks': len(result),
+        }
+
+    @staticmethod
     def get_activity_heatmap(user_id, days=90):
         """获取活动热力图数据"""
         cutoff_date = datetime.utcnow() - timedelta(days=days)

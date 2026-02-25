@@ -24,6 +24,7 @@ class ReportGenerator:
             knowledge  = StatsCalculator.get_knowledge_mastery(user_id, days) or {}
             code_quality = StatsCalculator.get_code_quality_trend(user_id, days) or {}
             weaknesses = WeaknessAnalyzer.analyze_weaknesses(user_id, days) or {}
+            chunk_stats = StatsCalculator.get_knowledge_chunk_stats(10)
 
             score           = ReportGenerator._calculate_report_score(overview, weaknesses)
             recommendations = ReportGenerator._generate_recommendations(
@@ -42,6 +43,7 @@ class ReportGenerator:
                 'knowledge_mastery': knowledge,
                 'weaknesses':       weaknesses,
                 'code_quality':     code_quality,
+                'knowledge_chunk_stats': chunk_stats,
                 'recommendations':  recommendations,
                 'score':            score,
                 'generated_at':     datetime.utcnow().isoformat(),

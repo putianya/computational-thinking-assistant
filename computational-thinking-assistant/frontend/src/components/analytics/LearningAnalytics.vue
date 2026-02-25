@@ -161,6 +161,12 @@
               type="views"
             />
           </div>
+
+          <!-- 知识块引用热度 -->
+          <div v-else-if="analyticsStore.selectedCard === 'chunk_heat'">
+            <h3>🔥 知识块引用热度排行</h3>
+            <KnowledgeChunkHeatmap :data="analyticsStore.knowledgeChunkStats" />
+          </div>
         </div>
       </div>
     </div>
@@ -181,6 +187,7 @@ import TrendChart from "./TrendChart.vue";
 import WeaknessChart from "./WeaknessChart.vue";
 import ActivityHeatmap from "./ActivityHeatmap.vue";
 import ReportExport from "./ReportExport.vue";
+import KnowledgeChunkHeatmap from "./KnowledgeChunkHeatmap.vue";
 
 const authStore = useAuthStore();
 const analyticsStore = useAnalyticsStore();

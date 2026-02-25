@@ -18,6 +18,7 @@ export const useAnalyticsStore = defineStore("analytics", () => {
   const errorDistribution = ref(null);
   const codeQualityTrend = ref([]);
   const activityHeatmap = ref(null);
+  const knowledgeChunkStats = ref(null);
 
   const isLoading = ref(false);
 
@@ -205,6 +206,20 @@ export const useAnalyticsStore = defineStore("analytics", () => {
   }
 
   /**
+   * 加载知识块引用热度
+   */
+  async function loadKnowledgeChunkStats(limit = 20) {
+    try {
+      const response = await analyticsAPI.getKnowledgeChunkStats(limit);
+      if (response.status === "success") {
+        knowledgeChunkStats.value = response.data;
+      }
+    } catch (error) {
+      console.error("❌ 加载知识块热度数据失败:", error);
+    }
+  }
+
+  /**
    * 加载所有数据
    */
   async function loadAllData(days = 30) {
@@ -217,6 +232,7 @@ export const useAnalyticsStore = defineStore("analytics", () => {
         loadLearningTrend(days),
         loadKnowledgeMastery(days),
         loadWeaknessAnalysis(days),
+        loadKnowledgeChunkStats(),
         loadActivityHeatmap(days),
       ]);
 
@@ -253,6 +269,8 @@ export const useAnalyticsStore = defineStore("analytics", () => {
     weaknessAnalysis.value = null;
     errorDistribution.value = null;
     codeQualityTrend.value = [];
+
+    knowledgeChunkStats.value = null;
     activityHeatmap.value = [];
     isLoading.value = false;
     currentPeriod.value = 30;
@@ -274,6 +292,7 @@ export const useAnalyticsStore = defineStore("analytics", () => {
     errorDistribution,
     codeQualityTrend,
     activityHeatmap,
+    knowledgeChunkStats,
     isLoading,
     currentPeriod,
     students,
@@ -288,6 +307,7 @@ export const useAnalyticsStore = defineStore("analytics", () => {
     loadLearningTrend,
     loadKnowledgeMastery,
     loadWeaknessAnalysis,
+    loadKnowledgeChunkStats,
     loadActivityHeatmap,
     loadAllData,
     refreshData,
