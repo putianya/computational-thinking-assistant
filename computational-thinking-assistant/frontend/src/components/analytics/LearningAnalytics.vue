@@ -244,8 +244,12 @@ async function quickSelectStudent(userId) {
   await handleStudentChange();
 }
 
-function handleCardClick(cardType) {
+async function handleCardClick(cardType) {
   analyticsStore.setSelectedCard(cardType);
+  // 如果选中活跃天数但数据还没加载，立即补充加载
+  if (cardType === 'active_days' && (!analyticsStore.activityHeatmap || analyticsStore.activityHeatmap.length === 0)) {
+    await analyticsStore.loadActivityHeatmap(analyticsStore.currentPeriod);
+  }
 }
 
 function getRankClass(index) {
