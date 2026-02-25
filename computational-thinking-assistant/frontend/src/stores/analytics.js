@@ -162,6 +162,29 @@ export const useAnalyticsStore = defineStore("analytics", () => {
   }
 
   /**
+   * 加载活跃热力图
+   */
+  async function loadActivityHeatmap(days = 30) {
+    try {
+      if (!selectedStudentId.value) {
+        activityHeatmap.value = [];
+        return;
+      }
+      // 热力图使用更长的天数范围（默认用 days，最少30天）
+      const heatmapDays = Math.max(days, 30);
+      const response = await analyticsAPI.getActivityHeatmap(
+        heatmapDays,
+        selectedStudentId.value,
+      );
+      if (response.status === "success") {
+        activityHeatmap.value = response.data;
+      }
+    } catch (error) {
+      console.error("❌ 加载热力图数据失败:", error);
+    }
+  }
+
+  /**
    * 加载薄弱环节分析
    */
   async function loadWeaknessAnalysis(days = 30) {
@@ -210,6 +233,7 @@ export const useAnalyticsStore = defineStore("analytics", () => {
         loadKnowledgeMastery(days),
         loadWeaknessAnalysis(days),
         loadKnowledgeChunkStats(),
+        loadActivityHeatmap(days),
       ]);
 
       console.log("✅ 所有分析数据加载完成");
@@ -245,8 +269,9 @@ export const useAnalyticsStore = defineStore("analytics", () => {
     weaknessAnalysis.value = null;
     errorDistribution.value = null;
     codeQualityTrend.value = [];
-    activityHeatmap.value = null;
+
     knowledgeChunkStats.value = null;
+    activityHeatmap.value = [];
     isLoading.value = false;
     currentPeriod.value = 30;
     students.value = [];
@@ -283,6 +308,7 @@ export const useAnalyticsStore = defineStore("analytics", () => {
     loadKnowledgeMastery,
     loadWeaknessAnalysis,
     loadKnowledgeChunkStats,
+    loadActivityHeatmap,
     loadAllData,
     refreshData,
     changePeriod,
