@@ -192,6 +192,23 @@ def chat_stream():
                 'Content-Type': 'text/event-stream; charset=utf-8',
             }
         )
+
+        # ⭐ 新增：如果 AI 引用了知识块，记录知识点查看
+        try:
+            if referenced_chunks:  # referenced_chunks 是引用的知识块ID列表
+                from models.knowledge_chunk import KnowledgeChunk
+                for chunk_id in referenced_chunks:
+                    chunk = KnowledgeChunk.query.get(chunk_id)
+                    if chunk:
+                        DataCollector.record_knowledge_view(
+                            user_id=g.user_id,
+                            session_id=session_id,
+                            knowledge_title=chunk.chapter or chunk.source or f'知识块#{chunk_id}'
+                        )
+        except Exception as e:
+            print(f"⚠️ 记录RAG知识查看失败: {e}")
+
+
         
     except Exception as e:
         print(f"❌ 处理请求错误: {e}")
@@ -727,6 +744,8 @@ def get_document_chunks(filename):
     try:
         print(f"\n📡 收到请求: GET /api/knowledge/documents/{filename}")
         
+
+
         # 1. 查询该文档的所有知识块
         chunks = KnowledgeChunk.query.filter_by(
             source=filename,
@@ -776,6 +795,18 @@ def get_document_chunks(filename):
             }
         }), 200
         
+        # ⭐ 新增：记录知识点查看行为（仅学生）
+        try:
+            DataCollector.record_knowledge_view(
+                user_id=g.user_id,
+                session_id=None,
+                knowledge_title=filename,
+                duration_seconds=None
+            )
+        except Exception as e:
+            print(f"⚠️ 记录知识查看失败（不影响主流程）: {e}")
+
+
     except Exception as e:
         print(f"❌ 获取知识块失败: {e}")
         import traceback

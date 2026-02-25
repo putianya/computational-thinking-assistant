@@ -19,12 +19,13 @@ class ReportGenerator:
             if not user:
                 return {'error': '用户不存在'}
 
-            overview   = StatsCalculator.get_user_overview(user_id, days) or {}
-            trend      = StatsCalculator.get_learning_trend(user_id, days) or {}
-            knowledge  = StatsCalculator.get_knowledge_mastery(user_id, days) or {}
+            overview     = StatsCalculator.get_user_overview(user_id, days) or {}
+            trend        = StatsCalculator.get_learning_trend(user_id, days) or {}
+            knowledge    = StatsCalculator.get_knowledge_mastery(user_id, days) or {}
             code_quality = StatsCalculator.get_code_quality_trend(user_id, days) or {}
-            weaknesses = WeaknessAnalyzer.analyze_weaknesses(user_id, days) or {}
-            chunk_stats = StatsCalculator.get_knowledge_chunk_stats(10)
+            weaknesses   = WeaknessAnalyzer.analyze_weaknesses(user_id, days) or {}
+            # ⭐ 按 user_id 过滤
+            chunk_stats  = StatsCalculator.get_knowledge_chunk_stats(10, user_id=user_id)
 
             score           = ReportGenerator._calculate_report_score(overview, weaknesses)
             recommendations = ReportGenerator._generate_recommendations(
@@ -38,16 +39,16 @@ class ReportGenerator:
                     'nickname': user.nickname or user.username,
                     'name':     user.nickname or user.username,
                 },
-                'overview':         overview,
-                'trend':            trend,
-                'knowledge_mastery': knowledge,
-                'weaknesses':       weaknesses,
-                'code_quality':     code_quality,
+                'overview':              overview,
+                'trend':                 trend,
+                'knowledge_mastery':     knowledge,
+                'weaknesses':            weaknesses,
+                'code_quality':          code_quality,
                 'knowledge_chunk_stats': chunk_stats,
-                'recommendations':  recommendations,
-                'score':            score,
-                'generated_at':     datetime.utcnow().isoformat(),
-                'period_days':      days,
+                'recommendations':       recommendations,
+                'score':                 score,
+                'generated_at':          datetime.utcnow().isoformat(),
+                'period_days':           days,
             }
 
         except Exception as e:

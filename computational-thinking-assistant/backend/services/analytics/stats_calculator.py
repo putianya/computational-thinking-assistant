@@ -12,6 +12,10 @@ from models.learning_record import LearningRecord
 from models.error_pattern import ErrorPattern
 from models.chat_session import ChatSession
 from models.user import User
+from models.knowledge_chunk import KnowledgeChunk
+from models.chat_message import ChatMessage
+from models.chat_session import ChatSession
+import json
 
 
 class StatsCalculator:
@@ -85,13 +89,24 @@ class StatsCalculator:
         
         active_days = len(active_dates)
         
-        # 5. 知识点查看次数
-        view_count = LearningRecord.query.filter_by(
-            user_id=user_id,
-            action_type='view_knowledge'
-        ).filter(
-            LearningRecord.created_at >= cutoff_date
-        ).count()
+         # 5. 知识点查看次数 → 改为：涉及到的不重复知识点数量
+        records = LearningRecord.query.filter(
+            LearningRecord.user_id == user_id,
+            LearningRecord.created_at >= cutoff_date,
+            LearningRecord.action_type.in_(['ask', 'code_submit']),
+            LearningRecord.knowledge_topics.isnot(None),
+            LearningRecord.knowledge_topics != ''
+        ).all()
+
+        # 统计不重复知识点数
+        unique_topics = set()
+        for r in records:
+            for t in r.knowledge_topics.split(','):
+                t = t.strip()
+                if t:
+                    unique_topics.add(t)
+
+        view_count = len(unique_topics)  # ⭐ 不重复知识点数
         
         return {
             'total_duration_hours': total_duration_hours,
@@ -257,7 +272,6 @@ class StatsCalculator:
             # ⭐⭐⭐ 新增：计算平均分数 ⭐⭐⭐
             avg_score = None
             if code_records:
-                import json
                 scores = []
                 for r in code_records:
                     try:
@@ -403,41 +417,93 @@ class StatsCalculator:
         return result
     
     @staticmethod
-    def get_knowledge_chunk_stats(limit: int = 20):
-        """
-        获取知识块引用热度统计
-        按 retrieved_count 降序排列，返回热门知识块列表
-        """
-        from models.knowledge_chunk import KnowledgeChunk
+    def get_knowledge_chunk_stats(limit: int = 20, user_id: int = None):
+        """获取知识块引用热度统计"""
+        try:
+            if user_id:
+                # ⭐ 按学生过滤：统计该学生对话中引用的知识块
+                rows = ChatMessage.query.join(
+                    ChatSession, ChatMessage.session_id == ChatSession.id
+                ).filter(
+                    ChatSession.user_id == user_id,
+                    ChatMessage.referenced_chunks.isnot(None),
+                    ChatMessage.referenced_chunks != '[]',
+                    ChatMessage.referenced_chunks != ''
+                ).with_entities(ChatMessage.referenced_chunks).all()
 
-        chunks = KnowledgeChunk.query.filter_by(is_active=True)\
-            .order_by(KnowledgeChunk.retrieved_count.desc())\
-            .limit(limit)\
-            .all()
+                chunk_count = {}
+                for row in rows:
+                    try:
+                        ids = json.loads(row[0]) if row[0] else []
+                        for cid in ids:
+                            try:
+                                cid_int = int(cid)
+                                chunk_count[cid_int] = chunk_count.get(cid_int, 0) + 1
+                            except (ValueError, TypeError):
+                                pass
+                    except Exception:
+                        pass
 
-        total_retrieved = sum(c.retrieved_count or 0 for c in chunks)
+                if not chunk_count:
+                    return {'items': [], 'chunks': [], 'total_retrieved': 0,
+                            'total_chunks': 0, 'total_refs': 0}
 
-        result = []
-        for chunk in chunks:
-            count = chunk.retrieved_count or 0
-            result.append({
-                'id': chunk.id,
-                'source': chunk.source,
-                'chapter': chunk.chapter or '',
-                'section': chunk.section or '',
-                'retrieved_count': count,
-                'heat_rate': round(count / total_retrieved * 100, 1) if total_retrieved > 0 else 0,
-                'last_retrieved_at': chunk.last_retrieved_at.isoformat() if chunk.last_retrieved_at else None,
-                'char_count': chunk.char_count or 0,
-                'has_code': chunk.has_code or False,
-            })
+                chunks = KnowledgeChunk.query.filter(
+                    KnowledgeChunk.id.in_(list(chunk_count.keys())),
+                    KnowledgeChunk.is_active == True
+                ).all()
 
-        return {
-            'chunks': result,
-            'total_retrieved': total_retrieved,
-            'total_chunks': len(result),
-        }
+                max_count = max(chunk_count.values(), default=1)
+                items = sorted([
+                    {
+                        'chunk_id': c.id,
+                        'source': c.source or '',
+                        'chapter': c.chapter or c.source or f'知识块#{c.id}',
+                        'section': c.section or '',
+                        'has_code': c.has_code or False,
+                        'retrieved_count': chunk_count.get(c.id, 0),
+                        'heat_rate': round(chunk_count.get(c.id, 0) / max_count * 100, 1),
+                    }
+                    for c in chunks
+                ], key=lambda x: -x['retrieved_count'])[:limit]
 
+            else:
+                # 全局统计
+                chunks = KnowledgeChunk.query.filter_by(is_active=True)\
+                    .order_by(KnowledgeChunk.retrieved_count.desc())\
+                    .limit(limit).all()
+
+                max_count = max((c.retrieved_count or 0 for c in chunks), default=1)
+                items = [
+                    {
+                        'chunk_id': c.id,
+                        'source': c.source or '',
+                        'chapter': c.chapter or c.source or f'知识块#{c.id}',
+                        'section': c.section or '',
+                        'has_code': c.has_code or False,
+                        'retrieved_count': c.retrieved_count or 0,
+                        'heat_rate': round((c.retrieved_count or 0) / max_count * 100, 1),
+                    }
+                    for c in chunks
+                    if (c.retrieved_count or 0) > 0
+                ]
+
+            total_retrieved = sum(i['retrieved_count'] for i in items)
+            return {
+                'items': items,
+                'chunks': items,
+                'total_retrieved': total_retrieved,
+                'total_chunks': len(items),
+                'total_refs': total_retrieved,
+            }
+
+        except Exception as e:
+            print(f"❌ get_knowledge_chunk_stats 失败: {e}")
+            import traceback
+            traceback.print_exc()
+            return {'items': [], 'chunks': [], 'total_retrieved': 0,
+                    'total_chunks': 0, 'total_refs': 0}
+    
     @staticmethod
     def get_activity_heatmap(user_id, days=90):
         """获取活动热力图数据"""

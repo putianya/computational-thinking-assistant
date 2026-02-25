@@ -74,9 +74,9 @@
         <div class="stat-icon">👁️</div>
         <div class="stat-content">
           <div class="stat-value">
-            {{ analyticsStore.overview?.view_count || 0 }}
+            {{ analyticsStore.overview?.view_count ?? 0 }}
           </div>
-          <div class="stat-label">知识点查看</div>
+          <div class="stat-label">涉及知识点种类</div>
         </div>
         <i class="arrow-icon fas fa-chevron-right"></i>
       </div>

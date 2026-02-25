@@ -201,9 +201,74 @@
         </table>
       </div>
 
-      <!-- 四、薄弱环节 -->
+      <!-- ⭐ 新增：四、知识块引用热度 -->
+      <div
+        v-if="report.knowledge_chunk_stats?.items?.length > 0"
+        class="report-section"
+      >
+        <h2 class="section-title">四、知识块引用热度</h2>
+        <div
+          class="overview-grid"
+          style="grid-template-columns: repeat(2, 1fr); margin-bottom: 16px"
+        >
+          <div class="overview-card">
+            <div class="card-icon">🔥</div>
+            <div class="card-value">
+              {{ report.knowledge_chunk_stats.total_retrieved || 0 }}
+            </div>
+            <div class="card-label">总引用次数</div>
+          </div>
+          <div class="overview-card">
+            <div class="card-icon">📚</div>
+            <div class="card-value">
+              {{ report.knowledge_chunk_stats.total_chunks || 0 }}
+            </div>
+            <div class="card-label">上榜知识块数</div>
+          </div>
+        </div>
+        <table class="report-table">
+          <thead>
+            <tr>
+              <th style="width: 50px">排名</th>
+              <th>来源</th>
+              <th>章节</th>
+              <th style="width: 80px">引用次数</th>
+              <th style="width: 60px">占比</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr
+              v-for="(item, idx) in report.knowledge_chunk_stats.items.slice(
+                0,
+                10,
+              )"
+              :key="item.chunk_id"
+            >
+              <td style="text-align: center">
+                {{
+                  idx === 0
+                    ? "🥇"
+                    : idx === 1
+                      ? "🥈"
+                      : idx === 2
+                        ? "🥉"
+                        : idx + 1
+                }}
+              </td>
+              <td>{{ item.source || "—" }}</td>
+              <td>{{ item.chapter || "—" }}</td>
+              <td style="text-align: center">
+                <strong>{{ item.retrieved_count }}</strong> 次
+              </td>
+              <td style="text-align: center">{{ item.heat_rate }}%</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- 五、薄弱环节 -->
       <div v-if="report.weaknesses?.weak_topics?.length" class="report-section">
-        <h2 class="section-title">四、薄弱环节分析</h2>
+        <h2 class="section-title">五、薄弱环节分析</h2>
         <h3 class="subsection-title">薄弱知识点（正确率 &lt; 60%）</h3>
         <table class="report-table">
           <thead>
@@ -250,9 +315,9 @@
         </template>
       </div>
 
-      <!-- 五、学习建议 -->
+      <!-- 六、学习建议 -->
       <div v-if="report.recommendations?.length" class="report-section">
-        <h2 class="section-title">五、个性化学习建议</h2>
+        <h2 class="section-title">六、个性化学习建议</h2>
         <div class="recommendations">
           <div
             v-for="(rec, i) in report.recommendations"

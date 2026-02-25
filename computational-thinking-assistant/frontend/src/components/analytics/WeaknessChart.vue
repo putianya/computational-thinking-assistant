@@ -48,9 +48,9 @@ const chartOption = computed(() => {
     (a, b) => (b.total_count || 0) - (a.total_count || 0),
   );
 
+  // ⭐ 不要在这里 reverse，保持原顺序
   const topics = sorted.map((d) => d.topic || "未知");
   const counts = sorted.map((d) => d.total_count || 0);
-  const masteries = sorted.map((d) => d.mastery || 0);
 
   return {
     tooltip: {
@@ -59,12 +59,13 @@ const chartOption = computed(() => {
       formatter: (params) => {
         const idx = params[0]?.dataIndex;
         if (idx === undefined) return "";
-        const item = sorted[idx];
+        // ⭐ yAxis 是 reverse 后的，所以 dataIndex 对应 reversed 数组
+        const item = sorted[sorted.length - 1 - idx]; // ⭐ 修正索引
         return `<b>${item.topic}</b><br/>查看次数: ${item.total_count || 0} 次<br/>掌握度: ${item.mastery || 0}%`;
       },
     },
     legend: {
-      data: ["查看次数"], // ⭐ 删除"掌握度"，与 series name 保持一致
+      data: ["查看次数"],
       top: 0,
     },
     grid: {
@@ -84,7 +85,7 @@ const chartOption = computed(() => {
     ],
     yAxis: {
       type: "category",
-      data: topics.reverse(),
+      data: [...topics].reverse(), // ⭐ 只在 yAxis 这里 reverse，让最高的排在最上面
       axisLabel: {
         fontSize: 13,
         width: 110,
@@ -97,7 +98,7 @@ const chartOption = computed(() => {
       {
         name: "查看次数",
         type: "bar",
-        data: counts.reverse(),
+        data: [...counts].reverse(), // ⭐ series 数据也同步 reverse
         barMaxWidth: 20,
         itemStyle: {
           color: {

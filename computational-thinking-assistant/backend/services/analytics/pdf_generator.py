@@ -77,16 +77,12 @@ class PDFReportGenerator:
         fb = self.font_bold
 
         self.styles = {
-            # ⭐ 封面标题：28->14
             'title': ParagraphStyle('title', fontName=fb, fontSize=14,
                                     textColor=self.COLOR_PRIMARY, alignment=TA_CENTER, spaceAfter=4),
-            # ⭐ 副标题：14->10
             'subtitle': ParagraphStyle('subtitle', fontName=fn, fontSize=10,
                                        textColor=self.COLOR_MUTED, alignment=TA_CENTER, spaceAfter=4),
-            # ⭐ 元信息：11->9
             'meta': ParagraphStyle('meta', fontName=fn, fontSize=9,
                                    textColor=self.COLOR_MUTED, alignment=TA_CENTER, spaceAfter=3),
-            # ⭐ 章节标题
             'h1': ParagraphStyle('h1', fontName=fb, fontSize=12,
                                  textColor=self.COLOR_PRIMARY, spaceBefore=10, spaceAfter=5),
             'h2': ParagraphStyle('h2', fontName=fb, fontSize=10,
@@ -95,12 +91,14 @@ class PDFReportGenerator:
                                             textColor=self.COLOR_PRIMARY, spaceBefore=10, spaceAfter=5),
             'subsection_title': ParagraphStyle('subsection_title', fontName=fb, fontSize=10,
                                                textColor=self.COLOR_TEXT, spaceBefore=6, spaceAfter=3),
-            # ⭐ 正文
+            'subsection': ParagraphStyle('subsection', fontName=fb, fontSize=10,
+                                         textColor=self.COLOR_TEXT, spaceBefore=6, spaceAfter=3),
+            'muted': ParagraphStyle('muted', fontName=fn, fontSize=9,
+                                    textColor=self.COLOR_MUTED, spaceAfter=3),
             'body': ParagraphStyle('body', fontName=fn, fontSize=9,
                                    textColor=self.COLOR_TEXT, spaceAfter=3, leading=13),
             'small': ParagraphStyle('small', fontName=fn, fontSize=8,
                                     textColor=self.COLOR_MUTED, spaceAfter=2),
-            # ⭐ 卡片数值：原来太大，改小
             'card_value': ParagraphStyle('card_value', fontName=fb, fontSize=13,
                                          textColor=self.COLOR_PRIMARY, alignment=TA_CENTER),
             'card_label': ParagraphStyle('card_label', fontName=fn, fontSize=8,
