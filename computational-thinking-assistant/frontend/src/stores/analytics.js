@@ -170,17 +170,18 @@ export const useAnalyticsStore = defineStore("analytics", () => {
         activityHeatmap.value = [];
         return;
       }
-      // 热力图使用更长的天数范围（默认用 days，最少30天）
-      const heatmapDays = Math.max(days, 30);
       const response = await analyticsAPI.getActivityHeatmap(
-        heatmapDays,
+        Math.max(days, 30),
         selectedStudentId.value,
       );
       if (response.status === "success") {
-        activityHeatmap.value = response.data;
+        activityHeatmap.value = response.data || [];
+        console.log(`✅ 热力图数据: ${activityHeatmap.value.length} 天有记录`);
+        console.log("热力图原始数据:", activityHeatmap.value);
       }
     } catch (error) {
       console.error("❌ 加载热力图数据失败:", error);
+      activityHeatmap.value = [];
     }
   }
 
@@ -210,12 +211,20 @@ export const useAnalyticsStore = defineStore("analytics", () => {
    */
   async function loadKnowledgeChunkStats(limit = 20) {
     try {
-      const response = await analyticsAPI.getKnowledgeChunkStats(limit);
+      // ⭐ 传入当前选中学生的 user_id
+      const response = await analyticsAPI.getKnowledgeChunkStats(
+        limit,
+        selectedStudentId.value, // ⭐ 新增
+      );
       if (response.status === "success") {
-        knowledgeChunkStats.value = response.data;
+        knowledgeChunkStats.value = response.data || [];
+        console.log(
+          `✅ 知识块热度: ${knowledgeChunkStats.value.length} 条, user_id=${selectedStudentId.value}`,
+        );
       }
     } catch (error) {
-      console.error("❌ 加载知识块热度数据失败:", error);
+      console.error("❌ 加载知识块热度失败:", error);
+      knowledgeChunkStats.value = [];
     }
   }
 
@@ -223,10 +232,9 @@ export const useAnalyticsStore = defineStore("analytics", () => {
    * 加载所有数据
    */
   async function loadAllData(days = 30) {
+    isLoading.value = true;
     try {
-      isLoading.value = true;
       currentPeriod.value = days;
-
       await Promise.all([
         loadOverview(days),
         loadLearningTrend(days),
@@ -235,10 +243,8 @@ export const useAnalyticsStore = defineStore("analytics", () => {
         loadKnowledgeChunkStats(),
         loadActivityHeatmap(days),
       ]);
-
-      console.log("✅ 所有分析数据加载完成");
     } catch (error) {
-      console.error("❌ 加载分析数据失败:", error);
+      console.error("❌ 加载数据失败:", error);
     } finally {
       isLoading.value = false;
     }

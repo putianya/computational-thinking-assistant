@@ -1,365 +1,409 @@
 <!-- filepath: s:\Python__GraduationProject\computational-thinking-assistant\frontend\src\components\analytics\ActivityHeatmap.vue -->
 <template>
-  <div class="activity-heatmap">
-    <div v-if="hasData" class="chart-area">
-      <!-- 统计摘要 -->
-      <div class="heatmap-summary">
+  <div class="activity-calendar">
+    <!-- 空状态 -->
+    <div v-if="!hasStudent" class="empty-state">
+      <div class="empty-icon">👈</div>
+      <p>请先选择一名学生</p>
+    </div>
+
+    <template v-else>
+      <!-- 汇总栏 -->
+      <div class="summary-bar">
         <div class="summary-item">
-          <span class="summary-value">{{ stats.activeDays }}</span>
+          <span class="summary-value">{{ activeDays }}</span>
           <span class="summary-label">活跃天数</span>
         </div>
         <div class="summary-item">
-          <span class="summary-value">{{ stats.maxStreak }}</span>
-          <span class="summary-label">最长连续</span>
+          <span class="summary-value">{{ maxCount }}</span>
+          <span class="summary-label">最高单日</span>
         </div>
         <div class="summary-item">
-          <span class="summary-value">{{ stats.activeRate }}%</span>
-          <span class="summary-label">活跃率</span>
-        </div>
-        <div class="summary-item">
-          <span class="summary-value">{{ stats.busiestDay }}</span>
-          <span class="summary-label">最活跃星期</span>
+          <span class="summary-value">{{ totalCount }}</span>
+          <span class="summary-label">累计活动</span>
         </div>
       </div>
 
-      <!-- 热力图容器 -->
-      <div class="heatmap-grid">
-        <!-- 星期标签 -->
-        <div class="weekday-labels">
-          <div class="weekday-label">一</div>
-          <div class="weekday-label">二</div>
-          <div class="weekday-label">三</div>
-          <div class="weekday-label">四</div>
-          <div class="weekday-label">五</div>
-          <div class="weekday-label">六</div>
-          <div class="weekday-label">日</div>
-        </div>
+      <!-- 月份翻页 -->
+      <div class="calendar-nav">
+        <button class="nav-btn" @click="prevMonth" :disabled="!canGoPrev">
+          ‹
+        </button>
+        <span class="nav-title">{{ viewYear }} 年 {{ viewMonth + 1 }} 月</span>
+        <button class="nav-btn" @click="nextMonth" :disabled="!canGoNext">
+          ›
+        </button>
+      </div>
 
-        <!-- 日历网格 -->
-        <div class="calendar-grid">
-          <div
-            v-for="(cell, index) in calendarCells"
-            :key="index"
-            :class="['day-cell', cell.levelClass]"
-            :title="cell.tooltip"
-          >
-            <span v-if="cell.showDate" class="cell-date">{{ cell.day }}</span>
-          </div>
-        </div>
+      <!-- 日历主体 -->
+      <div class="calendar-grid">
+        <!-- 星期头 -->
+        <div class="week-header" v-for="w in weekDays" :key="w">{{ w }}</div>
 
-        <!-- 图例 -->
-        <div class="heatmap-legend">
-          <span class="legend-label">少</span>
-          <div class="legend-cell level-0"></div>
-          <div class="legend-cell level-1"></div>
-          <div class="legend-cell level-2"></div>
-          <div class="legend-cell level-3"></div>
-          <div class="legend-cell level-4"></div>
-          <span class="legend-label">多</span>
+        <!-- 空白占位（月份第一天前） -->
+        <div
+          v-for="n in firstDayOffset"
+          :key="'empty-' + n"
+          class="day-cell empty"
+        ></div>
+
+        <!-- 日期格子 -->
+        <div
+          v-for="day in daysInMonth"
+          :key="day.date"
+          class="day-cell"
+          :class="[
+            getLevel(day.count),
+            { today: day.isToday, 'out-of-range': day.outOfRange },
+          ]"
+          :title="
+            day.outOfRange ? day.label : `${day.label}：${day.count} 次活动`
+          "
+        >
+          <span class="day-num">{{ day.dayNum }}</span>
+          <span v-if="day.count > 0 && !day.outOfRange" class="day-count">{{
+            day.count
+          }}</span>
         </div>
       </div>
-    </div>
 
-    <!-- 无数据 -->
-    <div v-else class="empty-state">
-      <div class="empty-icon">📅</div>
-      <h3>暂无活跃记录</h3>
-      <p>开始学习后将显示活跃热力图</p>
-    </div>
+      <!-- 图例 -->
+      <div class="legend">
+        <span class="legend-label">少</span>
+        <div class="legend-cell level-0"></div>
+        <div class="legend-cell level-1"></div>
+        <div class="legend-cell level-2"></div>
+        <div class="legend-cell level-3"></div>
+        <div class="legend-cell level-4"></div>
+        <span class="legend-label">多</span>
+      </div>
+    </template>
   </div>
 </template>
 
 <script setup>
-import { computed } from "vue";
+import { ref, computed } from "vue";
 
 const props = defineProps({
-  data: {
-    type: Array,
-    default: () => [],
-    // 期望格式: [{ date: '2026-02-01', count: 5, duration: 1.2 }, ...]
-  },
-  days: {
-    type: Number,
-    default: 30,
-  },
+  data: { type: Array, default: () => [] },
+  days: { type: Number, default: 30 },
+  hasStudent: { type: Boolean, default: false },
 });
 
-const hasData = computed(() => {
-  return props.data && props.data.length > 0;
-});
+const weekDays = ["日", "一", "二", "三", "四", "五", "六"];
 
-// 建立日期->数据的映射
-const dateMap = computed(() => {
+// 当前浏览的年月（默认当月）
+const today = new Date();
+const viewYear = ref(today.getFullYear());
+const viewMonth = ref(today.getMonth()); // 0-based
+
+// 数据映射 date -> count
+const dataMap = computed(() => {
   const map = {};
   (props.data || []).forEach((item) => {
-    if (item.date) {
-      map[item.date] = {
-        count: item.total_count || item.count || 0,
-        duration: item.duration || 0,
-      };
-    }
+    map[item.date] = item.count || 0;
   });
   return map;
 });
 
-// 最大活跃度（用于计算颜色级别）
-const maxCount = computed(() => {
-  const counts = Object.values(dateMap.value).map((v) => v.count);
-  return Math.max(...counts, 1);
+// 整个数据范围（最早日期 ~ 今天）
+const rangeStart = computed(() => {
+  const d = new Date(today);
+  d.setDate(today.getDate() - props.days + 1);
+  d.setHours(0, 0, 0, 0);
+  return d;
 });
 
-// 生成日历格子
-const calendarCells = computed(() => {
-  const cells = [];
-  const today = new Date();
-  const startDate = new Date(today);
-  startDate.setDate(startDate.getDate() - props.days + 1);
+// 当月第一天是星期几（0=周日）
+const firstDayOffset = computed(() => {
+  return new Date(viewYear.value, viewMonth.value, 1).getDay();
+});
 
-  // 补齐起始日到周一
-  const startDay = startDate.getDay(); // 0=周日
-  const offset = startDay === 0 ? 6 : startDay - 1; // 周一=0的偏移量
-  const paddingStart = new Date(startDate);
-  paddingStart.setDate(paddingStart.getDate() - offset);
+// 当月天数
+const totalDays = computed(() => {
+  return new Date(viewYear.value, viewMonth.value + 1, 0).getDate();
+});
 
-  // 从 paddingStart 一直到 today
-  const current = new Date(paddingStart);
-  while (current <= today) {
-    const dateStr = current.toISOString().split("T")[0];
-    const data = dateMap.value[dateStr];
-    const count = data ? data.count : 0;
-    const duration = data ? data.duration : 0;
-    const isInRange = current >= startDate;
+// 生成当月所有日期格子
+const daysInMonth = computed(() => {
+  const result = [];
+  for (let d = 1; d <= totalDays.value; d++) {
+    const date = new Date(viewYear.value, viewMonth.value, d);
+    const dateStr = date.toISOString().slice(0, 10);
+    const isToday =
+      date.getFullYear() === today.getFullYear() &&
+      date.getMonth() === today.getMonth() &&
+      date.getDate() === today.getDate();
+    // 超出数据范围（未来或太久前）
+    const outOfRange = date > today || date < rangeStart.value;
 
-    const level = isInRange ? getLevel(count) : -1;
-
-    cells.push({
+    result.push({
+      dayNum: d,
       date: dateStr,
-      day: current.getDate(),
-      count,
-      duration,
-      isInRange,
-      levelClass: isInRange ? `level-${level}` : "out-of-range",
-      showDate: current.getDate() === 1 || cells.length === 0,
-      tooltip: isInRange
-        ? `${dateStr}\n活动: ${count} 次\n时长: ${duration.toFixed(1)} 小时`
-        : "",
+      label: `${viewYear.value}-${String(viewMonth.value + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`,
+      count: outOfRange ? 0 : dataMap.value[dateStr] || 0,
+      isToday,
+      outOfRange,
     });
-
-    current.setDate(current.getDate() + 1);
   }
-
-  return cells;
+  return result;
 });
 
-function getLevel(count) {
-  if (count === 0) return 0;
-  const ratio = count / maxCount.value;
-  if (ratio <= 0.25) return 1;
-  if (ratio <= 0.5) return 2;
-  if (ratio <= 0.75) return 3;
-  return 4;
+// 汇总（跨所有数据，不限当月）
+const allCells = computed(() => {
+  const result = [];
+  const d = new Date(rangeStart.value);
+  while (d <= today) {
+    const dateStr = d.toISOString().slice(0, 10);
+    result.push({ count: dataMap.value[dateStr] || 0 });
+    d.setDate(d.getDate() + 1);
+  }
+  return result;
+});
+
+const activeDays = computed(
+  () => allCells.value.filter((c) => c.count > 0).length,
+);
+const maxCount = computed(() =>
+  Math.max(...allCells.value.map((c) => c.count), 0),
+);
+const totalCount = computed(() =>
+  allCells.value.reduce((s, c) => s + c.count, 0),
+);
+
+// 翻月限制
+const minMonth = computed(() => {
+  const d = new Date(rangeStart.value);
+  return { year: d.getFullYear(), month: d.getMonth() };
+});
+const canGoPrev = computed(
+  () =>
+    viewYear.value > minMonth.value.year ||
+    (viewYear.value === minMonth.value.year &&
+      viewMonth.value > minMonth.value.month),
+);
+const canGoNext = computed(
+  () =>
+    viewYear.value < today.getFullYear() ||
+    (viewYear.value === today.getFullYear() &&
+      viewMonth.value < today.getMonth()),
+);
+
+function prevMonth() {
+  if (!canGoPrev.value) return;
+  if (viewMonth.value === 0) {
+    viewMonth.value = 11;
+    viewYear.value--;
+  } else viewMonth.value--;
+}
+function nextMonth() {
+  if (!canGoNext.value) return;
+  if (viewMonth.value === 11) {
+    viewMonth.value = 0;
+    viewYear.value++;
+  } else viewMonth.value++;
 }
 
-// 统计数据
-const stats = computed(() => {
-  const dates = Object.keys(dateMap.value);
-  const activeDays = dates.filter((d) => dateMap.value[d].count > 0).length;
-
-  // 最长连续天数
-  let maxStreak = 0;
-  let currentStreak = 0;
-  const today = new Date();
-  for (let i = 0; i < props.days; i++) {
-    const d = new Date(today);
-    d.setDate(d.getDate() - (props.days - 1 - i));
-    const dateStr = d.toISOString().split("T")[0];
-    if (dateMap.value[dateStr] && dateMap.value[dateStr].count > 0) {
-      currentStreak++;
-      maxStreak = Math.max(maxStreak, currentStreak);
-    } else {
-      currentStreak = 0;
-    }
-  }
-
-  // 活跃率
-  const activeRate =
-    props.days > 0 ? Math.round((activeDays / props.days) * 100) : 0;
-
-  // 最活跃的星期几
-  const weekdayCounts = [0, 0, 0, 0, 0, 0, 0]; // 周一到周日
-  Object.keys(dateMap.value).forEach((dateStr) => {
-    const d = new Date(dateStr);
-    const day = d.getDay(); // 0=周日
-    const idx = day === 0 ? 6 : day - 1; // 转为 0=周一
-    weekdayCounts[idx] += dateMap.value[dateStr].count;
-  });
-  const weekdays = ["一", "二", "三", "四", "五", "六", "日"];
-  const busiestIdx = weekdayCounts.indexOf(Math.max(...weekdayCounts));
-  const busiestDay = weekdays[busiestIdx] || "-";
-
-  return { activeDays, maxStreak, activeRate, busiestDay };
-});
+function getLevel(count) {
+  if (count === 0) return "level-0";
+  if (maxCount.value === 0) return "level-0";
+  const r = count / maxCount.value;
+  if (r <= 0.25) return "level-1";
+  if (r <= 0.5) return "level-2";
+  if (r <= 0.75) return "level-3";
+  return "level-4";
+}
 </script>
 
 <style scoped>
-.activity-heatmap {
-  flex: 1;
+.activity-calendar {
   display: flex;
   flex-direction: column;
+  gap: 12px;
 }
 
-.chart-area {
-  flex: 1;
+/* 空状态 */
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 20px;
+  color: #999;
+  text-align: center;
+  background: #fafafa;
+  border-radius: 10px;
+  border: 1px dashed #ddd;
+}
+.empty-icon {
+  font-size: 36px;
+  margin-bottom: 8px;
+  opacity: 0.5;
 }
 
-.heatmap-summary {
+/* 汇总栏 */
+.summary-bar {
   display: flex;
   gap: 16px;
-  margin-bottom: 20px;
-  flex-wrap: wrap;
 }
-
 .summary-item {
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 10px 18px;
+  padding: 8px 16px;
   background: #f5f7fa;
   border-radius: 8px;
-  min-width: 80px;
+  min-width: 72px;
 }
-
 .summary-value {
-  font-size: 22px;
+  font-size: 18px;
   font-weight: bold;
   color: #667eea;
 }
-
 .summary-label {
-  font-size: 12px;
+  font-size: 11px;
   color: #999;
-  margin-top: 4px;
+  margin-top: 2px;
 }
 
-.heatmap-grid {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.weekday-labels {
-  display: flex;
-  gap: 0;
-  margin-left: 0;
-}
-
-.weekday-label {
-  width: 18px;
-  height: 18px;
+/* 翻月导航 */
+.calendar-nav {
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 11px;
-  color: #999;
-  margin-right: 3px;
+  gap: 16px;
+}
+.nav-btn {
+  background: none;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  width: 28px;
+  height: 28px;
+  cursor: pointer;
+  font-size: 16px;
+  color: #555;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s;
+}
+.nav-btn:hover:not(:disabled) {
+  background: #f0f0f0;
+}
+.nav-btn:disabled {
+  color: #ccc;
+  cursor: not-allowed;
+}
+.nav-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #333;
+  min-width: 110px;
+  text-align: center;
 }
 
+/* 日历网格 */
 .calendar-grid {
   display: grid;
-  grid-template-columns: repeat(7, 18px);
-  grid-auto-rows: 18px;
-  gap: 3px;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 4px;
 }
 
+/* 星期头 */
+.week-header {
+  text-align: center;
+  font-size: 12px;
+  color: #999;
+  font-weight: 600;
+  padding: 4px 0;
+}
+
+/* 日期格子 */
 .day-cell {
-  width: 18px;
-  height: 18px;
-  border-radius: 3px;
-  cursor: default;
   position: relative;
+  aspect-ratio: 1;
+  border-radius: 6px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  cursor: default;
+  transition: transform 0.1s;
+  border: 1px solid transparent;
 }
-
-.day-cell.out-of-range {
+.day-cell:not(.empty):hover {
+  transform: scale(1.12);
+  z-index: 1;
+}
+.day-cell.empty {
   background: transparent;
+  border: none;
 }
 
-.day-cell.level-0 {
+.day-num {
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1;
+}
+.day-count {
+  font-size: 9px;
+  margin-top: 2px;
+  opacity: 0.8;
+  line-height: 1;
+}
+
+/* 今天高亮 */
+.day-cell.today {
+  border-color: #667eea !important;
+  box-shadow: 0 0 0 1.5px #667eea44;
+}
+.day-cell.today .day-num {
+  color: #667eea;
+  font-weight: 700;
+}
+
+/* 超出范围（未来/太久前） */
+.day-cell.out-of-range {
+  background: #f8f8f8 !important;
+  opacity: 0.4;
+}
+
+/* 颜色等级 */
+.level-0 {
   background: #ebedf0;
+  color: #aaa;
 }
-.day-cell.level-1 {
-  background: #c6dbef;
+.level-1 {
+  background: #c6e48b;
+  color: #555;
 }
-.day-cell.level-2 {
-  background: #84b1e0;
+.level-2 {
+  background: #7bc96f;
+  color: #fff;
 }
-.day-cell.level-3 {
-  background: #4a89d0;
+.level-3 {
+  background: #239a3b;
+  color: #fff;
 }
-.day-cell.level-4 {
-  background: #2154a8;
-}
-
-.day-cell:hover {
-  outline: 2px solid #333;
-  outline-offset: -1px;
-}
-
-.cell-date {
-  display: none;
+.level-4 {
+  background: #196127;
+  color: #fff;
 }
 
-.heatmap-legend {
+/* 图例 */
+.legend {
   display: flex;
   align-items: center;
   gap: 4px;
-  margin-top: 12px;
-}
-
-.legend-label {
-  font-size: 11px;
+  font-size: 12px;
   color: #999;
 }
-
+.legend-label {
+  font-size: 11px;
+}
 .legend-cell {
   width: 14px;
   height: 14px;
-  border-radius: 2px;
-}
-
-.legend-cell.level-0 {
-  background: #ebedf0;
-}
-.legend-cell.level-1 {
-  background: #c6dbef;
-}
-.legend-cell.level-2 {
-  background: #84b1e0;
-}
-.legend-cell.level-3 {
-  background: #4a89d0;
-}
-.legend-cell.level-4 {
-  background: #2154a8;
-}
-
-.empty-state {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  color: #999;
-}
-
-.empty-icon {
-  font-size: 64px;
-  margin-bottom: 16px;
-  opacity: 0.5;
-}
-
-.empty-state h3 {
-  margin: 0 0 8px 0;
-  font-size: 18px;
-  color: #666;
+  border-radius: 3px;
 }
 </style>

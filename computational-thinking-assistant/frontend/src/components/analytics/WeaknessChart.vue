@@ -64,7 +64,7 @@ const chartOption = computed(() => {
       },
     },
     legend: {
-      data: ["查看次数", "掌握度"],
+      data: ["查看次数"], // ⭐ 删除"掌握度"，与 series name 保持一致
       top: 0,
     },
     grid: {
@@ -155,6 +155,7 @@ const chartOption = computed(() => {
 .empty-state h3 {
   margin: 0 0 8px 0;
   font-size: 18px;
+
   color: #666;
 }
 </style>

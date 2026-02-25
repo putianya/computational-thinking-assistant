@@ -2071,6 +2071,49 @@ def analytics_weakness():
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
+@app.route('/api/analytics/activity-heatmap', methods=['GET'])
+@login_required
+@require_permission('view_analytics')
+def analytics_activity_heatmap():
+    """学习活跃热力图数据"""
+    try:
+        from datetime import timedelta
+        from sqlalchemy import func
+        from models.learning_record import LearningRecord
+
+        days = request.args.get('days', 30, type=int)
+        user_id = request.args.get('user_id', type=int)
+
+        print(f"📅 热力图请求: days={days}, user_id={user_id}")
+
+        if not user_id:
+            return jsonify({'status': 'success', 'data': []})
+
+        cutoff_date = datetime.utcnow() - timedelta(days=days)
+
+        # ⭐ 修复：SQLite 用 func.date() 而不是 cast(..., Date)
+        rows = db.session.query(
+            func.date(LearningRecord.created_at).label('day'),
+            func.count(LearningRecord.id).label('count')
+        ).filter(
+            LearningRecord.user_id == user_id,
+            LearningRecord.action_type != 'heartbeat',
+            LearningRecord.created_at >= cutoff_date
+        ).group_by(
+            func.date(LearningRecord.created_at)
+        ).order_by(
+            func.date(LearningRecord.created_at).asc()
+        ).all()
+
+        data = [{'date': str(row.day), 'count': row.count} for row in rows]
+        print(f"✅ 热力图结果: {len(data)} 天有记录, user_id={user_id}")
+        return jsonify({'status': 'success', 'data': data})
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
 
 @app.route('/api/analytics/students', methods=['GET'])
 @login_required
@@ -2098,19 +2141,118 @@ def analytics_students():
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
+
+# ...existing code...
 @app.route('/api/analytics/knowledge-chunk-stats', methods=['GET'])
 @login_required
 @require_permission('view_analytics')
 def analytics_knowledge_chunk_stats():
-    """知识块引用热度统计（教师/管理员）"""
+    """知识块引用热度统计"""
     try:
+        from models.knowledge_chunk import KnowledgeChunk
+        from sqlalchemy import func
+
         limit = request.args.get('limit', 20, type=int)
-        data = StatsCalculator.get_knowledge_chunk_stats(limit)
+        user_id = request.args.get('user_id', type=int)
+
+        if user_id:
+            from models.chat_message import ChatMessage
+            from models.chat_session import ChatSession
+            import json
+
+            subq = db.session.query(
+                ChatMessage.referenced_chunks
+            ).join(
+                ChatSession, ChatMessage.session_id == ChatSession.id
+            ).filter(
+                ChatSession.user_id == user_id,
+                ChatMessage.referenced_chunks.isnot(None),
+                ChatMessage.referenced_chunks != '[]',
+                ChatMessage.referenced_chunks != ''
+            ).all()
+
+            chunk_count = {}
+            for row in subq:
+                try:
+                    ids = json.loads(row[0]) if row[0] else []
+                    for cid in ids:
+                        chunk_count[cid] = chunk_count.get(cid, 0) + 1
+                except Exception:
+                    pass
+
+            if not chunk_count:
+                return jsonify({'status': 'success', 'data': {
+                    'items': [], 'total_refs': 0, 'unique_chunks': 0,
+                    'chunks': [], 'total_retrieved': 0, 'total_chunks': 0
+                }})
+
+            chunks = KnowledgeChunk.query.filter(
+                KnowledgeChunk.id.in_(chunk_count.keys()),
+                KnowledgeChunk.is_active == True
+            ).all()
+
+            max_count = max(chunk_count.values(), default=1)
+            items = sorted([
+                {
+                    'chunk_id': c.id,
+                    'source': c.source or '',
+                    'chapter': c.chapter or c.source or f'知识块#{c.id}',
+                    'section': c.section or '',
+                    'content_preview': (c.content or '')[:80],
+                    'has_code': c.has_code or False,
+                    'ref_count_in_period': chunk_count.get(c.id, 0),
+                    'total_retrieved_count': c.retrieved_count or 0,
+                    'heat_rate': round(chunk_count.get(c.id, 0) / max_count * 100, 1),
+                    'retrieved_count': chunk_count.get(c.id, 0),
+                }
+                for c in chunks
+            ], key=lambda x: -x['ref_count_in_period'])[:limit]
+
+        else:
+            # 全局统计
+            chunks = KnowledgeChunk.query.filter_by(is_active=True)\
+                .order_by(KnowledgeChunk.retrieved_count.desc())\
+                .limit(limit).all()
+
+            max_count = max((c.retrieved_count or 0 for c in chunks), default=1)
+            items = [
+                {
+                    'chunk_id': c.id,
+                    'source': c.source or '',
+                    'chapter': c.chapter or c.source or f'知识块#{c.id}',
+                    'section': c.section or '',
+                    'content_preview': (c.content or '')[:80],
+                    'has_code': c.has_code or False,
+                    'ref_count_in_period': c.retrieved_count or 0,
+                    'total_retrieved_count': c.retrieved_count or 0,
+                    'heat_rate': round((c.retrieved_count or 0) / max_count * 100, 1),
+                    'retrieved_count': c.retrieved_count or 0,
+                }
+                for c in chunks
+            ]
+
+        total_refs = sum(i['ref_count_in_period'] for i in items)
+
+        # ⭐ 同时兼容 KnowledgeChunkStats.vue 和 KnowledgeChunkHeatmap.vue 两种格式
+        data = {
+            # KnowledgeChunkStats.vue 需要的字段
+            'items': items,
+            'total_refs': total_refs,
+            'unique_chunks': len(items),
+            # KnowledgeChunkHeatmap.vue 需要的字段
+            'chunks': items,
+            'total_retrieved': total_refs,
+            'total_chunks': len(items),
+        }
+
+        print(f"✅ 知识块热度: {len(items)} 条, user_id={user_id}")
         return jsonify({'status': 'success', 'data': data})
+
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         return jsonify({'status': 'error', 'message': str(e)}), 500
-
-
+# ...existing code...
 @app.route('/api/analytics/report', methods=['GET'])
 @login_required
 def get_learning_report():

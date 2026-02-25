@@ -143,28 +143,25 @@ export const analyticsAPI = {
   },
 
   /**
-   * 获取活动热力图数据
+   * 获取活跃热力图数据
    */
-  async getActivityHeatmap(days = 90, userId = null) {
+  async getActivityHeatmap(days = 30, userId = null) {
     let url = `${API_BASE_URL}/analytics/activity-heatmap?days=${days}`;
     if (userId) url += `&user_id=${userId}`;
-
     const response = await fetch(url, {
-      method: "GET",
       headers: getAuthHeaders(),
     });
-
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     return response.json();
   },
 
   /**
-   * 获取知识块引用热度统计
+   * 获取知识块引用热度
    */
-  async getKnowledgeChunkStats(limit = 20) {
-    const url = `${API_BASE_URL}/analytics/knowledge-chunk-stats?limit=${limit}`;
+  async getKnowledgeChunkStats(limit = 20, userId = null) {
+    let url = `${API_BASE_URL}/analytics/knowledge-chunk-stats?limit=${limit}`;
+    if (userId) url += `&user_id=${userId}`;
     const response = await fetch(url, {
-      method: "GET",
       headers: getAuthHeaders(),
     });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);

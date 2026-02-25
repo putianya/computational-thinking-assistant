@@ -149,7 +149,8 @@
             <h3>📅 学习活跃热力图</h3>
             <ActivityHeatmap
               :data="analyticsStore.activityHeatmap || []"
-              :days="analyticsStore.currentPeriod"
+              :days="selectedPeriod"
+              :has-student="!!analyticsStore.selectedStudentId"
             />
           </div>
 
@@ -253,9 +254,17 @@ async function quickSelectStudent(userId) {
 
 async function handleCardClick(cardType) {
   analyticsStore.setSelectedCard(cardType);
-  // 如果选中活跃天数但数据还没加载，立即补充加载
-  if (cardType === 'active_days' && (!analyticsStore.activityHeatmap || analyticsStore.activityHeatmap.length === 0)) {
+
+  if (cardType === "active_days") {
+    if (isTeacherOrAdmin.value && !analyticsStore.selectedStudentId) {
+      alert("请先在左上角选择一名学生，再查看活跃热力图");
+      analyticsStore.setSelectedCard(null);
+      return;
+    }
+    // ⭐ 强制重新加载热力图
+    console.log("📅 点击活跃天数，强制加载热力图...");
     await analyticsStore.loadActivityHeatmap(analyticsStore.currentPeriod);
+    console.log("热力图数据:", analyticsStore.activityHeatmap);
   }
 }
 
