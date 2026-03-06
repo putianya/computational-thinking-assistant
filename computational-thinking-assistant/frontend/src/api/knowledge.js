@@ -132,4 +132,21 @@ export const knowledgeAPI = {
 
     return response.json();
   },
+
+  /**
+   * 同步知识库目录（补导入新增文件、清理已删文件记录）
+   */
+  async syncDocuments() {
+    const response = await fetch(`${API_BASE_URL}/knowledge/sync`, {
+      method: "POST",
+      headers: getAuthHeaders(),
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.message || "同步失败");
+    }
+
+    return response.json();
+  },
 };

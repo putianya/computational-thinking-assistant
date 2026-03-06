@@ -32,6 +32,15 @@
           <i class="fas fa-upload"></i>
           上传文档
         </button>
+        <button
+          @click="handleSync"
+          class="action-btn sync-btn"
+          :disabled="isSyncing"
+          title="扫描目录差异，自动导入新增文件并清理已删文件的记录"
+        >
+          <i class="fas fa-arrows-rotate" :class="{ 'fa-spin': isSyncing }"></i>
+          {{ isSyncing ? "同步中..." : "同步" }}
+        </button>
         <input
           ref="fileInput"
           type="file"
@@ -230,6 +239,8 @@ const showDeleteConfirm = ref(false);
 const deleteTarget = ref("");
 const isDeleting = ref(false);
 
+const isSyncing = ref(false);
+
 // 文件上传
 const fileInput = ref(null);
 
@@ -414,6 +425,25 @@ function cancelDelete() {
   deleteTarget.value = "";
 }
 
+async function handleSync() {
+  isSyncing.value = true;
+  try {
+    const response = await knowledgeAPI.syncDocuments();
+    const { imported, deleted, errors } = response.data;
+    let msg = response.message;
+    if (errors && errors.length) {
+      msg += `\n⚠️ ${errors.length} 个文件处理失败`;
+    }
+    alert(`✅ 同步完成：${msg}`);
+    await loadDocuments();
+    await loadStats();
+  } catch (e) {
+    alert(`❌ 同步失败：${e.message}`);
+  } finally {
+    isSyncing.value = false;
+  }
+}
+
 function handleSearch() {
   console.log("🔍 搜索:", searchQuery.value);
 }
@@ -586,6 +616,19 @@ function getRetrievedTooltip(chunk) {
 }
 
 .refresh-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.sync-btn {
+  background: #e8f5e9;
+  color: #2e7d32;
+  border: 1px solid #a5d6a7;
+}
+.sync-btn:hover:not(:disabled) {
+  background: #c8e6c9;
+}
+.sync-btn:disabled {
   opacity: 0.6;
   cursor: not-allowed;
 }

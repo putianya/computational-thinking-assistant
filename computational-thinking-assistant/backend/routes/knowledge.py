@@ -567,3 +567,104 @@ def update_knowledge_chunk(chunk_id):
             'status': 'error',
             'message': f'更新知识块失败: {str(e)}'
         }), 500
+
+
+# ========== 知识库目录同步 ==========
+
+def sync_knowledge_directory():
+    """
+    将磁盘上的 .md 文件与数据库 KnowledgeChunk 记录进行双向同步。
+
+    - 磁盘有、DB 无 → 导入（import_single_file）
+    - DB 有、磁盘无 → 删除知识块 + 向量
+
+    Returns:
+        dict: {'imported': [...], 'deleted': [...], 'errors': [...]}
+    """
+    from scripts.import_knowledge import import_single_file
+
+    knowledge_dir = Path(BASE_DIR) / 'data' / 'knowledge'
+    result = {'imported': [], 'deleted': [], 'errors': []}
+
+    if not knowledge_dir.exists():
+        print("⚠️ 知识库目录不存在，跳过同步")
+        return result
+
+    # 磁盘上的文件名集合
+    disk_files = {f.name for f in knowledge_dir.glob('*.md')}
+
+    # DB 中已知的文件名集合
+    db_sources = {
+        row[0]
+        for row in db.session.query(KnowledgeChunk.source).distinct().all()
+    }
+
+    # ---- 1. 磁盘有、DB 无 → 导入 ----
+    to_import = disk_files - db_sources
+    for filename in sorted(to_import):
+        file_path = knowledge_dir / filename
+        print(f"📥 同步新文件: {filename}")
+        try:
+            import_single_file(file_path)
+            result['imported'].append(filename)
+            print(f"   ✅ 导入成功")
+        except Exception as e:
+            print(f"   ❌ 导入失败: {e}")
+            result['errors'].append({'file': filename, 'error': str(e)})
+
+    # ---- 2. DB 有、磁盘无 → 清理 ----
+    to_delete = db_sources - disk_files
+    if to_delete:
+        vector_service = get_vector_service()
+    for filename in sorted(to_delete):
+        print(f"🗑️ 清理已删除文件的记录: {filename}")
+        try:
+            chunks = KnowledgeChunk.query.filter_by(source=filename).all()
+            vector_ids = [c.vector_id for c in chunks if c.vector_id]
+            if vector_ids:
+                vector_service.delete_documents(vector_ids)
+            KnowledgeChunk.query.filter_by(source=filename).delete()
+            db.session.commit()
+            result['deleted'].append(filename)
+            print(f"   ✅ 清理完成 ({len(chunks)} 条记录)")
+        except Exception as e:
+            print(f"   ❌ 清理失败: {e}")
+            db.session.rollback()
+            result['errors'].append({'file': filename, 'error': str(e)})
+
+    return result
+
+
+@knowledge_bp.route('/api/knowledge/sync', methods=['POST'])
+@login_required
+@require_permission('upload_doc')
+def sync_knowledge():
+    """手动触发知识库目录同步（补导入新增文件、清理已删文件）"""
+    try:
+        print("\n" + "=" * 60)
+        print("🔄 手动触发知识库同步")
+        print("=" * 60)
+
+        result = sync_knowledge_directory()
+
+        msg_parts = []
+        if result['imported']:
+            msg_parts.append(f"导入 {len(result['imported'])} 个新文件")
+        if result['deleted']:
+            msg_parts.append(f"清理 {len(result['deleted'])} 个已删文件的记录")
+        if not msg_parts:
+            msg_parts.append("无变更，已是最新")
+
+        return jsonify({
+            'status': 'success',
+            'message': '；'.join(msg_parts),
+            'data': result
+        })
+
+    except Exception as e:
+        print(f"❌ 同步失败: {e}")
+        traceback.print_exc()
+        return jsonify({
+            'status': 'error',
+            'message': f'同步失败: {str(e)}'
+        }), 500

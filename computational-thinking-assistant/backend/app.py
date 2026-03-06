@@ -82,5 +82,25 @@ if os.environ.get('WERKZEUG_RUN_MAIN') == 'true':
     print(f"💾 会话消息限制: {'无限制' if Config.MAX_MESSAGES_PER_SESSION is None else Config.MAX_MESSAGES_PER_SESSION}")
     print("=" * 60)
 
+    # ⬇️ 新增：启动时自动同步知识库目录
+    import threading
+    def _startup_sync():
+        import time
+        time.sleep(1)  # 等服务器完全就绪
+        with app.app_context():
+            try:
+                from routes.knowledge import sync_knowledge_directory
+                r = sync_knowledge_directory()
+                imported = len(r['imported'])
+                deleted = len(r['deleted'])
+                if imported or deleted:
+                    print(f"🔄 启动同步：新增 {imported} 个文档，清理 {deleted} 条孤立记录")
+                else:
+                    print("🔄 启动同步：知识库已是最新，无变更")
+            except Exception as e:
+                print(f"⚠️ 启动同步失败（不影响服务运行）: {e}")
+
+    threading.Thread(target=_startup_sync, daemon=True).start()
+
 if __name__ == '__main__':
     app.run(host=Config.HOST, port=Config.PORT, debug=Config.DEBUG)
