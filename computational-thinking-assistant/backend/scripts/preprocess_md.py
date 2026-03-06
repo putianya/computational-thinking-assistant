@@ -22,6 +22,98 @@ import argparse
 from pathlib import Path
 
 
+# ========== 0. OCR 文本预处理（无 Markdown 标题 → 自动生成标题） ==========
+
+def _collapse_cjk_spaces(text: str) -> str:
+    """折叠 CJK 字符/数字之间的多余空格（OCR 常见问题）。"""
+    text = re.sub(r' {2,}', ' ', text)
+    for _ in range(5):
+        prev = text
+        text = re.sub(
+            r'([\u4e00-\u9fff\uff00-\uffef]) ([\u4e00-\u9fff\uff00-\uffef\d])',
+            r'\1\2', text,
+        )
+        text = re.sub(
+            r'([\u4e00-\u9fff\uff00-\uffef\d]) ([\u4e00-\u9fff\uff00-\uffef])',
+            r'\1\2', text,
+        )
+        if text == prev:
+            break
+    return text
+
+
+def normalize_raw_text(raw_text: str) -> str:
+    """
+    将无 Markdown 标题的原始文本（OCR/PDF 导出）预处理为带标准 Markdown 标题的格式。
+
+    规则（按优先级）：
+    1. 代码块内容原样保留
+    2. 已有 Markdown 标题（# 开头）直接保留
+    3. 目录行（含 3+ 连续点号且末尾为页码）→ 整行跳过
+    4. "第 N 章 标题" → "## 第N章 标题"
+    5. "N.N.N 标题"   → "### N.N.N 标题"
+    6. "N.N 标题"     → "### N.N 标题"
+    7. 普通行：清理 OCR 多余空格
+    """
+    toc_re     = re.compile(r'[·\.]{3,}\s*\d+\s*$')
+    chapter_re = re.compile(r'^[\s　]*(第)\s*(\d{1,2})\s*(章)\s+(.+?)\s*$')
+    subsec_re  = re.compile(r'^[\s　]*(\d{1,2})\.(\d{1,2})\.(\d{1,2})\s+([^\d·\s].+?)\s*$')
+    sec_re     = re.compile(r'^[\s　]*(\d{1,2})\.(\d{1,2})\s+([^\d·\s].+?)\s*$')
+
+    lines = raw_text.splitlines()
+    result = []
+    in_code_block = False
+
+    for line in lines:
+        stripped = line.strip()
+
+        if stripped.startswith('```'):
+            in_code_block = not in_code_block
+            result.append(line)
+            continue
+        if in_code_block:
+            result.append(line)
+            continue
+
+        # 已有 Markdown 标题，保留原样
+        if re.match(r'^#{1,6}\s', stripped):
+            result.append(stripped)
+            continue
+
+        # 目录行：跳过
+        if toc_re.search(stripped):
+            continue
+
+        # 第N章
+        m = chapter_re.match(stripped)
+        if m:
+            num   = m.group(2)
+            title = _collapse_cjk_spaces(m.group(4).strip())
+            result.append(f'## 第{num}章 {title}')
+            continue
+
+        # N.N.N 节
+        m = subsec_re.match(stripped)
+        if m:
+            sec_num = f'{m.group(1)}.{m.group(2)}.{m.group(3)}'
+            title   = _collapse_cjk_spaces(m.group(4).strip())
+            result.append(f'### {sec_num} {title}')
+            continue
+
+        # N.N 节
+        m = sec_re.match(stripped)
+        if m:
+            sec_num = f'{m.group(1)}.{m.group(2)}'
+            title   = _collapse_cjk_spaces(m.group(3).strip())
+            result.append(f'### {sec_num} {title}')
+            continue
+
+        # 普通行：清理 OCR 多余空格
+        result.append(_collapse_cjk_spaces(line))
+
+    return '\n'.join(result)
+
+
 # ========== 1. 解析章节结构 ==========
 
 def parse_md_structure(raw_text: str) -> list:
@@ -195,7 +287,7 @@ def parse_md_structure(raw_text: str) -> list:
                     current_section = _new_section('', 2)
                 current_section['content_lines'].append(line)
         else:
-            # 普通正文行
+            # 普通行
             if current_section is None:
                 if current_chapter is None:
                     # 出现在任何 ## 之前但 first_chapter_line 之后（不应发生）
@@ -434,6 +526,9 @@ def split_md_to_files(
     if raw_text is None:
         print(f"❌ 无法读取文件（尝试 utf-8 和 gbk 均失败）: {input_path}")
         return []
+
+    # 预处理：识别中文章节结构、清理 OCR 多余空格
+    raw_text = normalize_raw_text(raw_text)
 
     # 解析章节结构
     chapters = parse_md_structure(raw_text)
