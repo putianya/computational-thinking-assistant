@@ -131,4 +131,33 @@ export const userAPI = {
 
     return response.json();
   },
+
+  /**
+   * 获取所有教师列表
+   */
+  async getTeachers() {
+    const response = await fetch(`${API_BASE_URL}/admin/teachers`, {
+      method: "GET",
+      headers: getAuthHeaders(),
+    });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    return response.json();
+  },
+
+  /**
+   * 获取所有学生列表（管理员用）
+   */
+  async getStudents() {
+    const response = await fetch(`${API_BASE_URL}/admin/users`, {
+      method: "GET",
+      headers: getAuthHeaders(),
+    });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const result = await response.json();
+    // 在前端过滤学生
+    if (result.status === "success") {
+      result.data.users = result.data.users.filter((u) => u.role === "student");
+    }
+    return result;
+  },
 };

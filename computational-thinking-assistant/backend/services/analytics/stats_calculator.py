@@ -159,54 +159,51 @@ class StatsCalculator:
         }
     
     @staticmethod
-    def get_all_students_overview(days=30):
-        """
-        ⭐⭐⭐ 新增：获取所有学生的学习概览汇总 ⭐⭐⭐
-        教师/管理员查看用
-        """
-        student_ids = StatsCalculator._get_student_ids()
-        
-        if not student_ids:
-            return {
-                'student_count': 0,
-                'students': [],
-                'summary': StatsCalculator._empty_overview(days)
-            }
-        
+    def get_all_students_overview(days=30, student_ids=None):
+        """获取指定（或全部）学生的学习概览汇总"""
+        if student_ids is not None:
+            ids = list(student_ids)
+        else:
+            ids = StatsCalculator._get_student_ids()
+
+        if not ids:
+            return {'student_count': 0, 'students': [], 'summary': StatsCalculator._empty_overview(days)}
+
+        # 以下保持原有逻辑，只是把 student_ids 变量替换为 ids
         students_data = []
         total_duration = 0
         total_questions = 0
         total_code = 0
         total_active_days = 0
-        
-        for sid in student_ids:
+
+        for sid in ids:
             user = User.query.get(sid)
+            if not user:
+                continue
             overview = StatsCalculator.get_user_overview(sid, days)
-            
             students_data.append({
                 'user_id': sid,
                 'username': user.username,
                 'nickname': user.nickname or user.username,
                 **overview
             })
-            
             total_duration += overview['total_duration_hours']
             total_questions += overview['question_count']
             total_code += overview['code_count']
             total_active_days += overview['active_days']
-        
-        # 按学习时长排序
+
         students_data.sort(key=lambda x: x['total_duration_hours'], reverse=True)
-        
+        count = len(students_data)
+
         return {
-            'student_count': len(student_ids),
+            'student_count': count,
             'students': students_data,
             'summary': {
                 'total_duration_hours': round(total_duration, 1),
-                'avg_duration_hours': round(total_duration / len(student_ids), 1),
+                'avg_duration_hours': round(total_duration / max(count, 1), 1),
                 'total_questions': total_questions,
                 'total_code_submissions': total_code,
-                'avg_active_days': round(total_active_days / len(student_ids), 1),
+                'avg_active_days': round(total_active_days / max(count, 1), 1),
                 'period_days': days
             }
         }

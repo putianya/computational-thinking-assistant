@@ -7,6 +7,14 @@ from database import db
 from werkzeug.security import generate_password_hash, check_password_hash
 
 
+# 教师-学生 多对多关联表
+teacher_student = db.Table(
+    'teacher_student',
+    db.Column('teacher_id', db.Integer, db.ForeignKey('users.id', ondelete='CASCADE'), primary_key=True),
+    db.Column('student_id', db.Integer, db.ForeignKey('users.id', ondelete='CASCADE'), primary_key=True)
+)
+
+
 class User(db.Model):
     """
     用户表
@@ -33,6 +41,25 @@ class User(db.Model):
     
     # 关系：一个用户有多个聊天会话
     chat_sessions = db.relationship('ChatSession', backref='user', lazy=True, cascade='all, delete-orphan')
+    
+    # 教师拥有的学生（教师视角）
+    students = db.relationship(
+        'User',
+        secondary=teacher_student,
+        primaryjoin=(teacher_student.c.teacher_id == id),
+        secondaryjoin=(teacher_student.c.student_id == id),
+        lazy='select',
+        overlaps='teachers'
+    )
+    # 学生所属的教师（学生视角）
+    teachers = db.relationship(
+        'User',
+        secondary=teacher_student,
+        primaryjoin=(teacher_student.c.student_id == id),
+        secondaryjoin=(teacher_student.c.teacher_id == id),
+        lazy='select',
+        overlaps='students'
+    )
     
     # ========== 🆕 角色权限常量 ==========
     ROLE_STUDENT = 'student'
@@ -97,10 +124,13 @@ class User(db.Model):
             'is_active': self.is_active,
             'created_at': self.created_at.isoformat() if self.created_at else None,
             'last_login': self.last_login.isoformat() if self.last_login else None,
-            # 🆕 添加角色信息
             'role': self.role,
             'role_display': self.get_role_display(),
-            'permissions': self.get_all_permissions()
+            'permissions': self.get_all_permissions(),
+            # 教师的学生ID列表
+            'student_ids': [s.id for s in self.students] if self.role == 'teacher' else [],
+            # 学生的教师ID列表
+            'teacher_ids': [t.id for t in self.teachers] if self.role == 'student' else [],
         }
     
     def __repr__(self):

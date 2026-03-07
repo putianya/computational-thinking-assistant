@@ -258,6 +258,62 @@
               <span>账户启用</span>
             </label>
           </div>
+
+          <!-- 教师：分配学生 -->
+          <div v-if="userForm.role === 'teacher'" class="form-group">
+            <label><i class="fas fa-users"></i> 管理学生</label>
+            <div class="student-select-list">
+              <label
+                v-for="s in allStudents"
+                :key="s.id"
+                class="student-checkbox-item"
+              >
+                <input
+                  type="checkbox"
+                  :value="s.id"
+                  v-model="userForm.student_ids"
+                />
+                {{ s.nickname || s.username }}
+                <span style="color: #999; font-size: 12px"
+                  >(@{{ s.username }})</span
+                >
+              </label>
+              <div
+                v-if="allStudents.length === 0"
+                style="color: #999; font-size: 13px"
+              >
+                暂无学生账号
+              </div>
+            </div>
+          </div>
+
+          <!-- 学生：所属教师 -->
+          <div v-if="userForm.role === 'student'" class="form-group">
+            <label><i class="fas fa-chalkboard-teacher"></i> 所属教师</label>
+            <div class="student-select-list">
+              <label
+                v-for="t in allTeachers"
+                :key="t.id"
+                class="student-checkbox-item"
+              >
+                <input
+                  type="checkbox"
+                  :value="t.id"
+                  v-model="userForm.teacher_ids"
+                />
+                {{ t.nickname || t.username }}
+                <span style="color: #999; font-size: 12px"
+                  >(@{{ t.username }})</span
+                >
+              </label>
+              <div
+                v-if="allTeachers.length === 0"
+                style="color: #999; font-size: 13px"
+              >
+                暂无教师账号
+              </div>
+            </div>
+          </div>
         </div>
 
         <div class="modal-footer">
@@ -294,6 +350,10 @@ const isEditMode = ref(false);
 const editingUser = ref(null);
 const isSaving = ref(false);
 
+// 所有学生/教师列表（用于分配）
+const allStudents = ref([]);
+const allTeachers = ref([]);
+
 const userForm = ref({
   username: "",
   nickname: "",
@@ -301,6 +361,8 @@ const userForm = ref({
   password: "",
   role: "student",
   is_active: true,
+  student_ids: [], // ← 新增
+  teacher_ids: [], // ← 新增
 });
 
 onMounted(() => {
@@ -394,12 +456,9 @@ function formatDate(dateStr) {
 /**
  * ⭐⭐⭐ 新增：打开添加用户对话框 ⭐⭐⭐
  */
-function handleAddUser() {
-  console.log("➕ 打开添加用户对话框");
-
+async function handleAddUser() {
   isEditMode.value = false;
   editingUser.value = null;
-
   userForm.value = {
     username: "",
     nickname: "",
@@ -407,7 +466,20 @@ function handleAddUser() {
     password: "",
     role: "student",
     is_active: true,
+    student_ids: [],
+    teacher_ids: [],
   };
+
+  try {
+    const [tRes, sRes] = await Promise.all([
+      userAPI.getTeachers(),
+      userAPI.getStudents(),
+    ]);
+    allTeachers.value = tRes.status === "success" ? tRes.data : [];
+    allStudents.value = sRes.status === "success" ? sRes.data.users : [];
+  } catch (e) {
+    console.warn("加载列表失败:", e);
+  }
 
   showUserDialog.value = true;
 }
@@ -415,9 +487,7 @@ function handleAddUser() {
 /**
  * ⭐⭐⭐ 新增：打开编辑用户对话框 ⭐⭐⭐
  */
-function handleEditUser(user) {
-  console.log("✏️ 打开编辑用户对话框:", user.username);
-
+async function handleEditUser(user) {
   isEditMode.value = true;
   editingUser.value = user;
 
@@ -425,10 +495,24 @@ function handleEditUser(user) {
     username: user.username,
     nickname: user.nickname || "",
     email: user.email || "",
-    password: "", // 密码留空
+    password: "",
     role: user.role,
     is_active: user.is_active,
+    student_ids: user.student_ids ? [...user.student_ids] : [],
+    teacher_ids: user.teacher_ids ? [...user.teacher_ids] : [],
   };
+
+  // 异步加载下拉列表
+  try {
+    const [tRes, sRes] = await Promise.all([
+      userAPI.getTeachers(),
+      userAPI.getStudents(),
+    ]);
+    allTeachers.value = tRes.status === "success" ? tRes.data : [];
+    allStudents.value = sRes.status === "success" ? sRes.data.users : [];
+  } catch (e) {
+    console.warn("加载教师/学生列表失败:", e);
+  }
 
   showUserDialog.value = true;
 }
@@ -449,6 +533,8 @@ function closeUserDialog() {
     password: "",
     role: "student",
     is_active: true,
+    student_ids: [], // ← 补上
+    teacher_ids: [], // ← 补上
   };
 }
 
@@ -484,6 +570,8 @@ async function confirmUserAction() {
         email: userForm.value.email,
         role: userForm.value.role,
         is_active: userForm.value.is_active,
+        student_ids: userForm.value.student_ids, // ← 新增
+        teacher_ids: userForm.value.teacher_ids, // ← 新增
       };
 
       // 如果输入了新密码，一并更新
@@ -1002,6 +1090,30 @@ tbody tr:hover {
   cursor: not-allowed;
   opacity: 0.6;
   box-shadow: none;
+}
+
+.student-select-list {
+  max-height: 160px;
+  overflow-y: auto;
+  border: 1px solid #e0e0e0;
+  border-radius: 6px;
+  padding: 8px;
+  background: #fafafa;
+}
+
+.student-checkbox-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.student-checkbox-item input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
 }
 
 /* ========== 响应式优化 ========== */

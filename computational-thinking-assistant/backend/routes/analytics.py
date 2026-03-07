@@ -63,19 +63,13 @@ def analytics_overview():
     try:
         days = request.args.get('days', 30, type=int)
         target_user_id = request.args.get('user_id', type=int)
+        viewable = _get_viewable_student_ids(g.user_id)
 
-        if target_user_id:
-            target_user = User.query.get(target_user_id)
-            if not target_user or target_user.role != 'student':
-                return jsonify({'status': 'error', 'message': '目标用户不是学生'}), 400
-
-            data = StatsCalculator.get_user_overview(target_user_id, days)
-        else:
-            data = StatsCalculator.get_all_students_overview(days)
-
+        if target_user_id and target_user_id not in viewable:
+            return jsonify({'status': 'error', 'message': '无权查看该学生数据'}), 403
+        data = StatsCalculator.get_user_overview(target_user_id, days)
         return jsonify({'status': 'success', 'data': data})
     except Exception as e:
-        print(f"❌ 获取学习概览失败: {e}")
         traceback.print_exc()
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
@@ -176,10 +170,16 @@ def analytics_activity_heatmap():
 @login_required
 @require_permission('view_analytics')
 def analytics_students():
-    """获取学生列表（供教师/管理员选择查看）"""
+    """获取学生列表（教师只能看自己名下的学生，管理员看全部）"""
     try:
-        students = User.query.filter_by(role='student', is_active=True)\
-            .order_by(User.username.asc()).all()
+        viewable_ids = _get_viewable_student_ids(g.user_id)
+        if not viewable_ids:
+            return jsonify({'status': 'success', 'data': []})
+
+        students = User.query.filter(
+            User.id.in_(viewable_ids),
+            User.is_active == True
+        ).order_by(User.username.asc()).all()
 
         return jsonify({
             'status': 'success',
@@ -360,3 +360,15 @@ def download_report_pdf():
         print(f"❌ PDF 生成失败: {e}")
         traceback.print_exc()
         return jsonify({'status': 'error', 'message': f'PDF 生成失败: {str(e)}'}), 500
+
+
+def _get_viewable_student_ids(viewer_id):
+    """返回当前用户可查看的学生ID集合"""
+    viewer = User.query.get(viewer_id)
+    if not viewer:
+        return set()
+    if viewer.role == 'admin':
+        return {u.id for u in User.query.filter_by(role='student', is_active=True).all()}
+    elif viewer.role == 'teacher':
+        return {s.id for s in viewer.students if s.role == 'student'}
+    return set()
