@@ -263,6 +263,7 @@ class VectorService:
         self,
         query: str,
         top_k: Optional[int] = None,
+        threshold: Optional[float] = None,   # ← 新增
         filter_metadata: Optional[Dict] = None
     ) -> List[Dict]:
         """检索相似文档（RAG 核心功能）"""

@@ -47,16 +47,18 @@ class LLMService:
         total_start_time = time.time()
         
         try:
-            # 1. 保存用户消息
-            save_start = time.time()
-            if session_id:
-                ChatService.save_message(session_id, 'user', user_message)
-            print(f"💾 保存用户消息耗时: {time.time() - save_start:.2f}秒")
-            
-            # 2. 构建消息
+
+             # 1. 构建消息
             build_start = time.time()
             messages, referenced_chunks = self._build_messages(user_message, session_id)
             print(f"🔧 构建消息耗时: {time.time() - build_start:.2f}秒")
+          
+          
+            # 2. 保存用户消息
+            save_start = time.time()
+            if session_id:
+                ChatService.save_message(session_id, 'user', user_message)
+            print(f"💾 保存用户消息耗时: {time.time() - save_start:.2f}秒")  
             
             if messages is None:
                 print("❌ 构建消息失败")
@@ -174,7 +176,8 @@ class LLMService:
                 # 执行检索
                 raw_results = self.vector_service.search(
                     query=user_message,
-                    top_k=top_k
+                    top_k=top_k,
+                    threshold=threshold   # ← 新增
                 )
                 
                 print(f"🔍 检索耗时: {time.time() - search_start:.2f}s, 原始结果: {len(raw_results)}条")
@@ -217,11 +220,11 @@ class LLMService:
                         ]
                         print(f"✅ 高置信度模式: 最高分={max_score:.3f}, 有效结果={len(search_results)}条")
                         
-                    elif max_score >= self.RAG_MEDIUM_CONFIDENCE:
+                    elif max_score >= threshold:
                         rag_mode = 'medium'
                         search_results = [
                             doc for doc in raw_results 
-                            if doc.get('score', 0) >= self.RAG_MEDIUM_CONFIDENCE
+                            if doc.get('score', 0) >= threshold
                         ]
                         print(f"⚠️ 中置信度模式: 最高分={max_score:.3f}, 有效结果={len(search_results)}条")
                         
@@ -236,12 +239,19 @@ class LLMService:
                 print(f"⏭️ 跳过RAG检索: {skip_reason}")
             
             # ========== 4. 获取历史上下文 ==========
-            context_start = time.time()
             context = []
             if session_id:
                 context = ChatService.get_context_for_ai(session_id)
             print(f"📚 上下文: {len(context)}条消息")
-            
+
+            # ========== 4.5 检测重复问题 ==========
+            is_repeat = any(
+                msg.get('role') == 'user' and msg.get('content', '').strip() == user_message.strip()
+                for msg in context
+            )
+            if is_repeat:
+                print(f"🔄 检测到重复问题，将注入多样性提示")
+
             # ========== 5. 根据 RAG 模式构建消息 ==========
             if rag_mode == 'high':
                 messages = self._build_high_confidence_rag_messages(
@@ -261,6 +271,13 @@ class LLMService:
                 )
                 print("📝 使用【普通对话】模式")
             
+            # ========== 重复问题：注入多样性提示 ==========
+            if is_repeat and messages:
+                messages.insert(len(messages) - 1, {
+                    "role": "system",
+                    "content": "【注意】该学生问的问题之前已经回答过。请换一个角度、使用不同的示例或更深入的分析来重新解释，不要重复之前完全相同的回答内容。"
+                })
+
             return messages, referenced_chunks
             
         except Exception as e:
@@ -281,7 +298,7 @@ class LLMService:
 
 请严格遵守以下规则：
 1. **必须优先使用**下方知识库内容回答问题
-2. **必须使用【参考资料X】格式标注引用**
+2. **引用时必须使用【参考资料X·章节名】格式标注**，X为编号，后面跟该资料的章节名，例如：【参考资料1·第3章 指针】【参考资料2·第1章 数组基础】**
 3. 如果知识库内容与问题完全匹配，直接引用不要改写
 4. 如果需要补充说明，明确区分"知识库内容"和"补充说明"
 5. 不要编造知识库中没有的内容
@@ -319,7 +336,7 @@ class LLMService:
 
 请注意：
 1. 这些内容**可能相关但不完全匹配**学生的问题
-2. 你可以选择性使用，如果使用请标注【参考资料X】
+2. 如果引用请标注【参考资料X·章节名】，X为编号，后面注明该资料的章节，例如：【参考资料1·第5章 函数】
 3. 可以结合你的知识进行补充和扩展
 4. 如果知识库内容不够准确，以你的专业判断为准
 5. 回答时说明哪些是知识库内容，哪些是你的补充
@@ -405,6 +422,7 @@ class LLMService:
             
             source = metadata.get('source', '未知来源')
             chapter = metadata.get('chapter', '')
+            section = metadata.get('section', '') 
             chunk_id = metadata.get('chunk_id', 'N/A')
             
             if score >= 0.85:
@@ -414,10 +432,13 @@ class LLMService:
             else:
                 confidence_tag = "可能相关"
             
+            # 显示时
+            display_location = f"{chapter}" + (f" > {section}" if section else "")
+
             formatted.append(
                 f"【参考资料 {i}】[{confidence_tag}]\n"
                 f"来源: {source}\n"
-                f"章节: {chapter}\n"
+                f"章节: {display_location}\n"   # ← 更丰富的定位信息
                 f"相似度: {score:.1%}\n"
                 f"知识块ID: {chunk_id}\n"
                 f"内容:\n{text}\n"
