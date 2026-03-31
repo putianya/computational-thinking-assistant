@@ -256,7 +256,23 @@ const filteredDocuments = computed(() => {
   result.sort((a, b) => {
     switch (sortBy.value) {
       case "name":
-        return a.name.localeCompare(b.name);
+        // 按文件名开头数字排序；无数字前缀的文件排在最后
+        const getLeadingNumber = (filename) => {
+          const match = filename.match(/^\d+/);
+          return match ? parseInt(match[0], 10) : Number.MAX_SAFE_INTEGER;
+        };
+
+        const numA = getLeadingNumber(a.name);
+        const numB = getLeadingNumber(b.name);
+
+        if (numA !== numB) {
+          return numA - numB;
+        }
+
+        return a.name.localeCompare(b.name, "zh-Hans-CN", {
+          numeric: true,
+          sensitivity: "base",
+        });
       case "size":
         return b.size - a.size;
       case "chunks_count":
