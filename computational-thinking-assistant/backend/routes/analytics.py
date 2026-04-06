@@ -172,25 +172,61 @@ def analytics_activity_heatmap():
 def analytics_students():
     """获取学生列表（教师只能看自己名下的学生，管理员看全部）"""
     try:
+        days = request.args.get('days', 30, type=int)
+        if not days or days <= 0:
+            days = 30
+
         viewable_ids = _get_viewable_student_ids(g.user_id)
         if not viewable_ids:
             return jsonify({'status': 'success', 'data': []})
+
+        cutoff_date = datetime.utcnow() - timedelta(days=days)
+
+        active_rows = db.session.query(
+            LearningRecord.user_id.label('user_id'),
+            func.count(func.distinct(func.date(LearningRecord.created_at))).label('active_days')
+        ).filter(
+            LearningRecord.user_id.in_(viewable_ids),
+            LearningRecord.action_type != 'heartbeat',
+            LearningRecord.created_at >= cutoff_date
+        ).group_by(
+            LearningRecord.user_id
+        ).all()
+
+        active_days_map = {
+            row.user_id: int(row.active_days or 0)
+            for row in active_rows
+        }
 
         students = User.query.filter(
             User.id.in_(viewable_ids),
             User.is_active == True
         ).order_by(User.username.asc()).all()
 
+        students_data = []
+        for s in students:
+            students_data.append({
+                'id': s.id,
+                'username': s.username,
+                'nickname': s.nickname or s.username,
+                'active_days': active_days_map.get(s.id, 0),
+                'last_login': s.last_login.isoformat() if s.last_login else None,
+                '_last_login_ts': s.last_login.timestamp() if s.last_login else 0,
+            })
+
+        students_data.sort(key=lambda x: (-x['active_days'], -x['_last_login_ts'], x['username']))
+
         return jsonify({
             'status': 'success',
             'data': [
                 {
-                    'id': s.id,
-                    'username': s.username,
-                    'nickname': s.nickname or s.username,
-                    'last_login': s.last_login.isoformat() if s.last_login else None
+                    'id': item['id'],
+                    'username': item['username'],
+                    'nickname': item['nickname'],
+                    'active_days': item['active_days'],
+                    'last_login': item['last_login'],
                 }
-                for s in students
+                for item in students_data
             ]
         })
     except Exception as e:

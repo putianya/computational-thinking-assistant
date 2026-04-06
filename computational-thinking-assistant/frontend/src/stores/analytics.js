@@ -64,9 +64,9 @@ export const useAnalyticsStore = defineStore("analytics", () => {
   });
 
   // ========== 加载学生列表 ==========
-  async function loadStudents() {
+  async function loadStudents(days = currentPeriod.value) {
     try {
-      const response = await analyticsAPI.getStudents();
+      const response = await analyticsAPI.getStudents(days);
       if (response.status === "success") {
         students.value = response.data;
         console.log(`✅ 加载了 ${students.value.length} 个学生`);
@@ -235,6 +235,7 @@ export const useAnalyticsStore = defineStore("analytics", () => {
     isLoading.value = true;
     try {
       currentPeriod.value = days;
+      await loadStudents(days);
       await Promise.all([
         loadOverview(days),
         loadLearningTrend(days),

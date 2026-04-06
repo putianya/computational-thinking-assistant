@@ -34,11 +34,14 @@ export const analyticsAPI = {
   /**
    * ⭐⭐⭐ 新增：获取学生列表 ⭐⭐⭐
    */
-  async getStudents() {
-    const response = await fetch(`${API_BASE_URL}/analytics/students`, {
-      method: "GET",
-      headers: getAuthHeaders(),
-    });
+  async getStudents(days = 30) {
+    const response = await fetch(
+      `${API_BASE_URL}/analytics/students?days=${days}`,
+      {
+        method: "GET",
+        headers: getAuthHeaders(),
+      },
+    );
 
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     return response.json();

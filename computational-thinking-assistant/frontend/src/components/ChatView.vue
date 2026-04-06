@@ -32,7 +32,11 @@
 
       <!-- 聊天容器 -->
       <div class="chat-container">
-        <div class="chat-messages" ref="messagesContainer">
+        <div
+          class="chat-messages"
+          ref="messagesContainer"
+          @scroll.passive="handleMessagesScroll"
+        >
           <!-- 空状态 -->
           <div v-if="chatStore.messages.length === 0" class="empty-state">
             <div class="empty-icon">🤖</div>
@@ -69,18 +73,25 @@ import ChatInput from "./ChatInput.vue";
 
 const chatStore = useChatStore();
 const messagesContainer = ref(null);
+const shouldAutoScroll = ref(true);
+const AUTO_SCROLL_THRESHOLD = 80;
 
 onMounted(async () => {
   console.log("📋 ChatView 挂载，加载会话列表...");
   await chatStore.loadSessions();
+  nextTick(() => {
+    scrollToBottom(true);
+  });
 });
 
 // 监听器
 watch(
   () => chatStore.messages.length,
-  () => {
+  (newLen, oldLen) => {
     nextTick(() => {
-      scrollToBottom();
+      if (newLen > oldLen) {
+        scrollToBottom();
+      }
     });
   },
 );
@@ -100,16 +111,29 @@ watch(
 watch(
   () => chatStore.currentSession,
   () => {
+    shouldAutoScroll.value = true;
     nextTick(() => {
-      scrollToBottom();
+      scrollToBottom(true);
     });
   },
 );
 
-function scrollToBottom() {
-  if (messagesContainer.value) {
-    messagesContainer.value.scrollTop = messagesContainer.value.scrollHeight;
-  }
+function isNearBottom() {
+  if (!messagesContainer.value) return true;
+  const el = messagesContainer.value;
+  return (
+    el.scrollHeight - el.scrollTop - el.clientHeight <= AUTO_SCROLL_THRESHOLD
+  );
+}
+
+function handleMessagesScroll() {
+  shouldAutoScroll.value = isNearBottom();
+}
+
+function scrollToBottom(force = false) {
+  if (!messagesContainer.value) return;
+  if (!force && !shouldAutoScroll.value) return;
+  messagesContainer.value.scrollTop = messagesContainer.value.scrollHeight;
 }
 
 async function handleContinue() {
