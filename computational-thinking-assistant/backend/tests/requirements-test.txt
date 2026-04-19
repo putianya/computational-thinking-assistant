@@ -1,0 +1,5 @@
+pytest==8.4.2
+locust==2.43.4
+Flask-SQLAlchemy==3.1.1
+PyJWT==2.10.1
+reportlab==4.4.10

@@ -1,0 +1,4 @@
+Method,Name,Error,Occurrences
+POST,chat_stream,CatchResponseError('bad stream response: 0'),45
+POST,code_analyze,CatchResponseError('bad response: 0'),46
+GET,api_test,"ConnectionRefusedError(10061, '[WinError 10061] 由于目标计算机积极拒绝，无法连接。')",41

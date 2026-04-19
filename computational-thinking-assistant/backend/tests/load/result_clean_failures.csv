@@ -1,0 +1,2 @@
+Method,Name,Error,Occurrences
+POST,code_analyze,CatchResponseError('bad response: 0'),1
