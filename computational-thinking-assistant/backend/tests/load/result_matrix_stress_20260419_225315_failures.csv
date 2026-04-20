@@ -1,0 +1,2 @@
+Method,Name,Error,Occurrences
+POST,auth_login,CatchResponseError('login failed: 401'),2

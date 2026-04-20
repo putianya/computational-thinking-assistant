@@ -1,0 +1,88 @@
+{
+  "generated_at": "2026-04-19 22:58:58",
+  "stats_csv": "S:\\Python__GraduationProject\\computational-thinking-assistant\\backend\\tests\\load\\result_matrix_stress_20260419_225459_stats.csv",
+  "history_csv": "S:\\Python__GraduationProject\\computational-thinking-assistant\\backend\\tests\\load\\result_matrix_stress_20260419_225459_stats_history.csv",
+  "aggregated": {
+    "name": "Aggregated",
+    "display_name": "Aggregated",
+    "type": "",
+    "request_count": 1140,
+    "failure_count": 1,
+    "median_ms": 78.0,
+    "avg_ms": 302.5714005263587,
+    "min_ms": 2.671600002940977,
+    "max_ms": 7006.550699999934,
+    "rps": 49.3244851081161,
+    "failures_per_s": 0.043267092200101845,
+    "p95_ms": 1000.0,
+    "success_rate": 99.91228070175438
+  },
+  "endpoints": [
+    {
+      "name": "api_test",
+      "display_name": "/api/test",
+      "type": "GET",
+      "request_count": 261,
+      "failure_count": 0,
+      "median_ms": 6.0,
+      "avg_ms": 10.962772796976905,
+      "min_ms": 2.671600002940977,
+      "max_ms": 170.0937999994494,
+      "rps": 11.29271106422658,
+      "failures_per_s": 0.0,
+      "p95_ms": 44.0,
+      "success_rate": 100.0
+    },
+    {
+      "name": "auth_login",
+      "display_name": "/api/auth/login",
+      "type": "POST",
+      "request_count": 50,
+      "failure_count": 1,
+      "median_ms": 310.0,
+      "avg_ms": 883.4938019997935,
+      "min_ms": 148.37240000269958,
+      "max_ms": 6856.41879999821,
+      "rps": 2.163354610005092,
+      "failures_per_s": 0.043267092200101845,
+      "p95_ms": 6100.0,
+      "success_rate": 98.0
+    },
+    {
+      "name": "chat_stream",
+      "display_name": "/api/chat/stream",
+      "type": "POST",
+      "request_count": 411,
+      "failure_count": 0,
+      "median_ms": 130.0,
+      "avg_ms": 350.18271776155564,
+      "min_ms": 16.76969999971334,
+      "max_ms": 7006.550699999934,
+      "rps": 17.782774894241857,
+      "failures_per_s": 0.0,
+      "p95_ms": 1100.0,
+      "success_rate": 100.0
+    },
+    {
+      "name": "code_analyze",
+      "display_name": "/api/code/analyze",
+      "type": "POST",
+      "request_count": 418,
+      "failure_count": 0,
+      "median_ms": 100.0,
+      "avg_ms": 368.35006172260324,
+      "min_ms": 16.87350000065635,
+      "max_ms": 6660.350800000742,
+      "rps": 18.08564453964257,
+      "failures_per_s": 0.0,
+      "p95_ms": 1600.0,
+      "success_rate": 100.0
+    }
+  ],
+  "charts": {
+    "latency": "S:\\Python__GraduationProject\\computational-thinking-assistant\\backend\\tests\\load\\performance_matrix_20260419_225459\\stress\\fig5_4_latency_comparison.png",
+    "rps": "S:\\Python__GraduationProject\\computational-thinking-assistant\\backend\\tests\\load\\performance_matrix_20260419_225459\\stress\\fig5_5_rps_comparison.png",
+    "trend": "S:\\Python__GraduationProject\\computational-thinking-assistant\\backend\\tests\\load\\performance_matrix_20260419_225459\\stress\\fig5_6_trend_rps_p95.png",
+    "success_rate": "S:\\Python__GraduationProject\\computational-thinking-assistant\\backend\\tests\\load\\performance_matrix_20260419_225459\\stress\\fig5_7_success_rate.png"
+  }
+}

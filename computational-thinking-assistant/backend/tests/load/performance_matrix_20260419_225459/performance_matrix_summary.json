@@ -1,0 +1,59 @@
+{
+  "generated_at": "2026-04-19 22:58:59",
+  "host": "http://127.0.0.1:5010",
+  "rows": [
+    {
+      "name": "baseline",
+      "users": 20,
+      "spawn_rate": 5.0,
+      "run_time": "15s",
+      "request_count": 406,
+      "failure_count": 0,
+      "success_rate": 100.0,
+      "avg_ms": 54.54569088675638,
+      "p95_ms": 200.0,
+      "rps": 28.382006258487767,
+      "stats_csv": "S:\\Python__GraduationProject\\computational-thinking-assistant\\backend\\tests\\load\\result_matrix_baseline_20260419_225459_stats.csv",
+      "history_csv": "S:\\Python__GraduationProject\\computational-thinking-assistant\\backend\\tests\\load\\result_matrix_baseline_20260419_225459_stats_history.csv",
+      "chart_dir": "S:\\Python__GraduationProject\\computational-thinking-assistant\\backend\\tests\\load\\performance_matrix_20260419_225459\\baseline",
+      "locust_exit_code": 0
+    },
+    {
+      "name": "standard",
+      "users": 35,
+      "spawn_rate": 7.0,
+      "run_time": "20s",
+      "request_count": 792,
+      "failure_count": 0,
+      "success_rate": 100.0,
+      "avg_ms": 138.87459393943647,
+      "p95_ms": 680.0,
+      "rps": 43.71656818133724,
+      "stats_csv": "S:\\Python__GraduationProject\\computational-thinking-assistant\\backend\\tests\\load\\result_matrix_standard_20260419_225459_stats.csv",
+      "history_csv": "S:\\Python__GraduationProject\\computational-thinking-assistant\\backend\\tests\\load\\result_matrix_standard_20260419_225459_stats_history.csv",
+      "chart_dir": "S:\\Python__GraduationProject\\computational-thinking-assistant\\backend\\tests\\load\\performance_matrix_20260419_225459\\standard",
+      "locust_exit_code": 0
+    },
+    {
+      "name": "stress",
+      "users": 50,
+      "spawn_rate": 10.0,
+      "run_time": "25s",
+      "request_count": 1140,
+      "failure_count": 1,
+      "success_rate": 99.91228070175438,
+      "avg_ms": 302.5714005263587,
+      "p95_ms": 1000.0,
+      "rps": 49.3244851081161,
+      "stats_csv": "S:\\Python__GraduationProject\\computational-thinking-assistant\\backend\\tests\\load\\result_matrix_stress_20260419_225459_stats.csv",
+      "history_csv": "S:\\Python__GraduationProject\\computational-thinking-assistant\\backend\\tests\\load\\result_matrix_stress_20260419_225459_stats_history.csv",
+      "chart_dir": "S:\\Python__GraduationProject\\computational-thinking-assistant\\backend\\tests\\load\\performance_matrix_20260419_225459\\stress",
+      "locust_exit_code": 0
+    }
+  ],
+  "charts": {
+    "latency_matrix": "S:\\Python__GraduationProject\\computational-thinking-assistant\\backend\\tests\\load\\performance_matrix_20260419_225459\\fig5_8_matrix_latency.png",
+    "rps_matrix": "S:\\Python__GraduationProject\\computational-thinking-assistant\\backend\\tests\\load\\performance_matrix_20260419_225459\\fig5_9_matrix_rps.png",
+    "success_rate_matrix": "S:\\Python__GraduationProject\\computational-thinking-assistant\\backend\\tests\\load\\performance_matrix_20260419_225459\\fig5_10_matrix_success_rate.png"
+  }
+}

@@ -40,6 +40,58 @@ class LLMService:
         )
         self.model = Config.OPENAI_MODEL
         self.vector_service = get_vector_service()
+        self._last_rag_meta = {}
+
+    def get_last_rag_meta(self):
+        """获取最近一次消息构建阶段产出的 RAG 元信息。"""
+        return getattr(self, "_last_rag_meta", {})
+
+    def _build_referenced_chunk_meta(self, docs):
+        """从检索文档中提取前端与日志需要的知识块元数据。"""
+        items = []
+        for doc in docs or []:
+            metadata = doc.get("metadata", {}) or {}
+            chunk_id = doc.get("chunk_id") or metadata.get("chunk_id")
+            if not chunk_id:
+                continue
+            items.append(
+                {
+                    "chunk_id": chunk_id,
+                    "score": round(float(doc.get("score", 0.0)), 4),
+                    "source": metadata.get("source", ""),
+                    "chapter": metadata.get("chapter", ""),
+                    "section": metadata.get("section", ""),
+                    "vector_id": doc.get("id", ""),
+                }
+            )
+        return items
+
+    def _log_rag_decision(self, rag_meta):
+        """打印更显眼的 RAG 决策日志。"""
+        referenced = rag_meta.get("referenced_chunks", [])
+        print("\n" + "=" * 72)
+        print("🧠🧠🧠 RAG 决策摘要")
+        print("=" * 72)
+        print(f"模式: {rag_meta.get('mode')} | 置信模式: {rag_meta.get('confidence_mode')}")
+        print(
+            f"问题类型: {rag_meta.get('question_type')} | needs_rag={rag_meta.get('needs_rag')}"
+        )
+        print(
+            f"最高分: {rag_meta.get('max_score')} | 阈值: {rag_meta.get('threshold')} | "
+            f"检索结果: {rag_meta.get('raw_result_count')} | 使用结果: {rag_meta.get('used_result_count')}"
+        )
+        if rag_meta.get("skip_reason"):
+            print(f"跳过原因: {rag_meta.get('skip_reason')}")
+        if referenced:
+            print("引用知识块:")
+            for item in referenced:
+                print(
+                    f"  - chunk_id={item['chunk_id']}, score={item['score']}, "
+                    f"source={item.get('source')}, chapter={item.get('chapter')}"
+                )
+        else:
+            print("引用知识块: 无")
+        print("=" * 72 + "\n")
     
     def chat_stream(self, user_message, session_id=None, max_context=None):
         """流式对话生成器"""
@@ -52,6 +104,11 @@ class LLMService:
             build_start = time.time()
             messages, referenced_chunks = self._build_messages(user_message, session_id)
             print(f"🔧 构建消息耗时: {time.time() - build_start:.2f}秒")
+
+            rag_meta = self.get_last_rag_meta()
+            if rag_meta:
+                # 将 RAG 决策通过流事件透传给前端，便于 F12 观察。
+                yield {"type": "rag_meta", **rag_meta}
           
           
             # 2. 保存用户消息
@@ -138,6 +195,9 @@ class LLMService:
         print("\n" + "=" * 60)
         print(f"🔍 【消息构建】步骤")
         print("=" * 60)
+
+        # 每次构建前重置，避免残留上一次状态
+        self._last_rag_meta = {}
         
         try:
             # ========== 1. 检测"继续"指令 ==========
@@ -149,6 +209,20 @@ class LLMService:
                 context = []
                 if session_id:
                     context = ChatService.get_context_for_ai(session_id)
+                self._last_rag_meta = {
+                    "mode": "ordinary",
+                    "confidence_mode": "none",
+                    "question_type": "continue",
+                    "needs_rag": False,
+                    "skip_reason": "续写请求",
+                    "max_score": 0.0,
+                    "threshold": None,
+                    "raw_result_count": 0,
+                    "used_result_count": 0,
+                    "referenced_chunk_ids": [],
+                    "referenced_chunks": [],
+                }
+                self._log_rag_decision(self._last_rag_meta)
                 return self._build_continue_messages(user_message, context)
             
             # ========== 2. 问题分类 ==========
@@ -166,12 +240,16 @@ class LLMService:
             search_results = []
             rag_mode = 'none'
             max_score = 0.0
-            referenced_chunks = []  # ⭐⭐⭐ 记录引用的知识块 ID ⭐⭐⭐
+            referenced_chunks = []
+            referenced_chunk_meta = []
+            raw_result_count = 0
+            threshold_used = classification.get('threshold', self.RAG_MEDIUM_CONFIDENCE)
             
             if needs_rag:
                 search_start = time.time()
                 top_k = classification.get('top_k', 5)
                 threshold = classification.get('threshold', self.RAG_MEDIUM_CONFIDENCE)
+                threshold_used = threshold
                 
                 # 执行检索
                 raw_results = self.vector_service.search(
@@ -179,6 +257,7 @@ class LLMService:
                     top_k=top_k,
                     threshold=threshold   # ← 新增
                 )
+                raw_result_count = len(raw_results)
                 
                 print(f"🔍 检索耗时: {time.time() - search_start:.2f}s, 原始结果: {len(raw_results)}条")
                 
@@ -258,12 +337,16 @@ class LLMService:
                     user_message, search_results, context, max_score
                 )
                 print("📝 使用【高置信度RAG】模式")
+                referenced_chunk_meta = self._build_referenced_chunk_meta(search_results)
+                referenced_chunks = [item["chunk_id"] for item in referenced_chunk_meta]
                 
             elif rag_mode == 'medium':
                 messages = self._build_medium_confidence_rag_messages(
                     user_message, search_results, context, max_score
                 )
                 print("📝 使用【中置信度RAG】模式")
+                referenced_chunk_meta = self._build_referenced_chunk_meta(search_results)
+                referenced_chunks = [item["chunk_id"] for item in referenced_chunk_meta]
                 
             else:
                 messages = self._build_fallback_messages(
@@ -278,12 +361,42 @@ class LLMService:
                     "content": "【注意】该学生问的问题之前已经回答过。请换一个角度、使用不同的示例或更深入的分析来重新解释，不要重复之前完全相同的回答内容。"
                 })
 
+            mode = 'rag' if rag_mode in ('high', 'medium') else 'ordinary'
+            confidence_mode = rag_mode if rag_mode in ('high', 'medium', 'low') else 'none'
+            self._last_rag_meta = {
+                "mode": mode,
+                "confidence_mode": confidence_mode,
+                "question_type": question_type,
+                "needs_rag": needs_rag,
+                "skip_reason": skip_reason,
+                "max_score": round(float(max_score), 4),
+                "threshold": round(float(threshold_used), 4) if threshold_used is not None else None,
+                "raw_result_count": raw_result_count,
+                "used_result_count": len(referenced_chunk_meta),
+                "referenced_chunk_ids": referenced_chunks,
+                "referenced_chunks": referenced_chunk_meta,
+            }
+            self._log_rag_decision(self._last_rag_meta)
+
             return messages, referenced_chunks
             
         except Exception as e:
             print(f"❌ 构建消息失败: {e}")
             import traceback
             traceback.print_exc()
+            self._last_rag_meta = {
+                "mode": "ordinary",
+                "confidence_mode": "none",
+                "question_type": "error",
+                "needs_rag": False,
+                "skip_reason": f"构建失败: {str(e)}",
+                "max_score": 0.0,
+                "threshold": None,
+                "raw_result_count": 0,
+                "used_result_count": 0,
+                "referenced_chunk_ids": [],
+                "referenced_chunks": [],
+            }
             return None, []
     
     # ⭐⭐⭐ 高置信度 RAG 消息构建 ⭐⭐⭐

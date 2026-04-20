@@ -325,6 +325,7 @@ export const useChatStore = defineStore("chat", () => {
         role: "assistant",
         content: "",
         created_at: new Date().toISOString(),
+        rag_meta: null,
       };
       messages.value.push(aiMessage);
 
@@ -436,6 +437,14 @@ export const useChatStore = defineStore("chat", () => {
             messages.value[aiMessageIndex].content =
               "抱歉，回复时出现错误，请重试。";
           }
+        },
+        (meta) => {
+          if (aiMessageIndex < messages.value.length) {
+            messages.value[aiMessageIndex].rag_meta = meta;
+          }
+          console.log(
+            `🧾 本轮摘要: mode=${meta.mode}, confidence=${meta.confidence_mode}, refs=${(meta.referenced_chunk_ids || []).length}`,
+          );
         },
       );
     } catch (error) {
@@ -600,6 +609,7 @@ export const useChatStore = defineStore("chat", () => {
         role: "assistant",
         content: "",
         created_at: new Date().toISOString(),
+        rag_meta: null,
       };
       messages.value.push(aiMessage);
 
@@ -711,6 +721,14 @@ export const useChatStore = defineStore("chat", () => {
             messages.value[aiMessageIndex].content =
               "抱歉，回复时出现错误，请重试。";
           }
+        },
+        (meta) => {
+          if (aiMessageIndex < messages.value.length) {
+            messages.value[aiMessageIndex].rag_meta = meta;
+          }
+          console.log(
+            `🧾 本轮摘要: mode=${meta.mode}, confidence=${meta.confidence_mode}, refs=${(meta.referenced_chunk_ids || []).length}`,
+          );
         },
       );
     } catch (error) {

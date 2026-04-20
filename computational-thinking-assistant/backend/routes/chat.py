@@ -4,6 +4,7 @@
 包含：chat_stream, clear_context, sessions CRUD
 """
 import json
+import inspect
 import time
 import traceback
 from flask import Blueprint, request, jsonify, Response, g, stream_with_context
@@ -40,6 +41,11 @@ def chat_stream():
         print(f"{'='*60}")
 
         service = ServiceRegistry.get_llm_service()
+        service_file = inspect.getsourcefile(service.__class__) or 'unknown'
+        print(
+            f"🧩 LLM服务实现: {service.__class__.__module__}.{service.__class__.__name__} "
+            f"({service_file})"
+        )
 
         try:
             knowledge_topics = None
@@ -55,11 +61,25 @@ def chat_stream():
         def generate():
             chunk_count = 0
             first_chunk_time = None
+            rag_meta_sent = False
 
             try:
                 yield f"data: {json.dumps({'type': 'session', 'session_id': session_id})}\n\n"
 
                 for chunk in service.chat_stream(user_message, session_id):
+                    if isinstance(chunk, dict):
+                        # 透传结构化元事件（如 RAG 模式、置信度、引用知识块）
+                        event_type = chunk.get('type', 'meta')
+                        if event_type == 'rag_meta':
+                            rag_meta_sent = True
+                            print(
+                                f"📡 发送RAG元信息: mode={chunk.get('mode')}, "
+                                f"confidence={chunk.get('confidence_mode')}, "
+                                f"refs={len(chunk.get('referenced_chunk_ids', []))}"
+                            )
+                        yield f"data: {json.dumps(chunk, ensure_ascii=False)}\n\n"
+                        continue
+
                     chunk_count += 1
 
                     if first_chunk_time is None:
@@ -68,6 +88,40 @@ def chat_stream():
                         print(f"⚡ 首字节延迟（请求→首块）: {latency:.2f}秒")
 
                     yield f"data: {json.dumps({'type': 'content', 'content': chunk})}\n\n"
+
+                # 兼容兜底：若上游漏发 rag_meta，尝试从服务实例补发一次
+                if not rag_meta_sent:
+                    fallback_meta = None
+                    meta_getter = getattr(service, 'get_last_rag_meta', None)
+                    if callable(meta_getter):
+                        try:
+                            fallback_meta = meta_getter() or None
+                        except Exception as meta_err:
+                            print(f"⚠️ 获取RAG元信息失败: {meta_err}")
+
+                    if fallback_meta:
+                        if 'type' not in fallback_meta:
+                            fallback_meta = {'type': 'rag_meta', **fallback_meta}
+                        print("⚠️ 主流程未发送rag_meta，已路由层补发")
+                        yield f"data: {json.dumps(fallback_meta, ensure_ascii=False)}\n\n"
+                        rag_meta_sent = True
+
+                if not rag_meta_sent:
+                    print("⚠️ 未获取到RAG元信息，发送兜底占位元信息")
+                    yield f"data: {json.dumps({
+                        'type': 'rag_meta',
+                        'mode': 'unknown',
+                        'confidence_mode': 'none',
+                        'question_type': 'unknown',
+                        'needs_rag': None,
+                        'skip_reason': '未收到后端RAG元信息（兼容兜底）',
+                        'max_score': 0.0,
+                        'threshold': None,
+                        'raw_result_count': 0,
+                        'used_result_count': 0,
+                        'referenced_chunk_ids': [],
+                        'referenced_chunks': []
+                    }, ensure_ascii=False)}\n\n"
 
                 yield f"data: {json.dumps({'type': 'done'})}\n\n"
 

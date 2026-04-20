@@ -71,6 +71,7 @@ export const chatAPI = {
     onChunk,
     onDone,
     onError,
+    onMeta,
   ) {
     const token = localStorage.getItem("token");
 
@@ -105,6 +106,7 @@ export const chatAPI = {
       let buffer = "";
       let firstChunkReceived = false;
       const startTime = Date.now();
+      let sawRagMeta = false;
 
       // ⭐⭐⭐ 新增：累积所有内容（即使前端不显示）⭐⭐⭐
       let accumulatedContent = "";
@@ -145,6 +147,42 @@ export const chatAPI = {
                 console.log("📍 会话 ID:", newSessionId);
                 break;
 
+              case "rag_meta": {
+                sawRagMeta = true;
+                const refs = data.referenced_chunks || [];
+                console.group(
+                  `🧠 对话模式=${data.mode} | 置信度模式=${data.confidence_mode}`,
+                );
+                console.log("question_type:", data.question_type);
+                console.log("needs_rag:", data.needs_rag);
+                console.log("max_score:", data.max_score, "threshold:", data.threshold);
+                console.log("raw_result_count:", data.raw_result_count);
+                console.log("used_result_count:", data.used_result_count);
+                console.log("referenced_chunk_ids:", data.referenced_chunk_ids || []);
+                if (refs.length > 0) {
+                  console.table(
+                    refs.map((x) => ({
+                      chunk_id: x.chunk_id,
+                      score: x.score,
+                      source: x.source,
+                      chapter: x.chapter,
+                      section: x.section,
+                    })),
+                  );
+                } else {
+                  console.log("本轮未引用知识块");
+                }
+                if (data.skip_reason) {
+                  console.log("skip_reason:", data.skip_reason);
+                }
+                console.groupEnd();
+
+                if (onMeta) {
+                  onMeta(data);
+                }
+                break;
+              }
+
               case "content":
                 if (data.content) {
                   // ⭐ 始终累积内容（后台记录）
@@ -159,6 +197,25 @@ export const chatAPI = {
 
               case "done":
                 console.log("✅ 服务器发送完成信号");
+                if (!sawRagMeta) {
+                  console.warn("⚠️ 本轮未收到 rag_meta，已使用兼容兜底信息");
+                  if (onMeta) {
+                    onMeta({
+                      type: "rag_meta",
+                      mode: "unknown",
+                      confidence_mode: "none",
+                      question_type: "unknown",
+                      needs_rag: null,
+                      skip_reason: "前端未收到后端RAG元信息（兼容兜底）",
+                      max_score: 0,
+                      threshold: null,
+                      raw_result_count: 0,
+                      used_result_count: 0,
+                      referenced_chunk_ids: [],
+                      referenced_chunks: [],
+                    });
+                  }
+                }
                 console.log(
                   `📊 完整回答长度: ${accumulatedContent.length} 字符`,
                 );

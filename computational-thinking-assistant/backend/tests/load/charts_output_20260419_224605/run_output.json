@@ -1,0 +1,7 @@
+{
+  "stats_csv": "S:\\Python__GraduationProject\\computational-thinking-assistant\\backend\\tests\\load\\result_auto_20260419_224605_stats.csv",
+  "history_csv": "S:\\Python__GraduationProject\\computational-thinking-assistant\\backend\\tests\\load\\result_auto_20260419_224605_stats_history.csv",
+  "chart_dir": "S:\\Python__GraduationProject\\computational-thinking-assistant\\backend\\tests\\load\\charts_output_20260419_224605",
+  "summary_json": "S:\\Python__GraduationProject\\computational-thinking-assistant\\backend\\tests\\load\\charts_output_20260419_224605\\performance_summary.json",
+  "report_md": "S:\\Python__GraduationProject\\computational-thinking-assistant\\backend\\tests\\load\\charts_output_20260419_224605\\performance_report.md"
+}

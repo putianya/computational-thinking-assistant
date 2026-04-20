@@ -1,0 +1,27 @@
+{
+  "generated_at": "2026-04-19 22:45:16",
+  "stats_csv": "S:\\Python__GraduationProject\\computational-thinking-assistant\\backend\\tests\\load\\result_auto_20260419_224439_stats.csv",
+  "history_csv": "S:\\Python__GraduationProject\\computational-thinking-assistant\\backend\\tests\\load\\result_auto_20260419_224439_stats_history.csv",
+  "aggregated": {
+    "name": "Aggregated",
+    "display_name": "Aggregated",
+    "type": "",
+    "request_count": 0,
+    "failure_count": 0,
+    "median_ms": 0.0,
+    "avg_ms": 0.0,
+    "min_ms": 0.0,
+    "max_ms": 0.0,
+    "rps": 0.0,
+    "failures_per_s": 0.0,
+    "p95_ms": 0.0,
+    "success_rate": 100.0
+  },
+  "endpoints": [],
+  "charts": {
+    "latency": null,
+    "rps": null,
+    "trend": "S:\\Python__GraduationProject\\computational-thinking-assistant\\backend\\tests\\load\\charts_output_20260419_224439\\fig5_6_trend_rps_p95.png",
+    "success_rate": null
+  }
+}
