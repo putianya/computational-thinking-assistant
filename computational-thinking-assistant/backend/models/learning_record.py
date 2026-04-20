@@ -41,7 +41,15 @@ class LearningRecord(db.Model):
                           index=True, comment='创建时间')
 
     # 关联关系
-    user = db.relationship('User', backref=db.backref('learning_records', lazy='dynamic'))
+    user = db.relationship(
+        'User',
+        backref=db.backref(
+            'learning_records',
+            lazy='dynamic',
+            cascade='all, delete-orphan',
+            passive_deletes=True
+        )
+    )
     session = db.relationship('ChatSession', backref=db.backref('learning_records', lazy='dynamic'))
 
     def __repr__(self):

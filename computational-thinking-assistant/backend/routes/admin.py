@@ -7,6 +7,10 @@ import traceback
 from flask import Blueprint, request, jsonify, g
 from database import db
 from models.user import User
+from models.learning_record import LearningRecord
+from models.error_pattern import ErrorPattern
+from models.learning_report import LearningReport
+from models.chat_session import ChatSession
 from utils.decorators import login_required, require_permission
 
 admin_bp = Blueprint('admin', __name__)
@@ -188,6 +192,20 @@ def delete_user(user_id):
             }), 404
 
         username = user.username
+
+        # 先清理依赖用户的业务数据，避免 ORM 在删除父对象时把外键置空触发约束错误
+        LearningRecord.query.filter_by(user_id=user_id).delete(synchronize_session=False)
+        ErrorPattern.query.filter_by(user_id=user_id).delete(synchronize_session=False)
+        LearningReport.query.filter_by(user_id=user_id).delete(synchronize_session=False)
+
+        # 会话需要逐个删除，确保会话下消息通过关系级联删除
+        sessions = ChatSession.query.filter_by(user_id=user_id).all()
+        for session in sessions:
+            db.session.delete(session)
+
+        # 解除师生关系映射
+        user.students.clear()
+        user.teachers.clear()
 
         db.session.delete(user)
         db.session.commit()

@@ -4,22 +4,10 @@
     <!-- 工具栏 -->
     <div class="export-toolbar">
       <div class="toolbar-left">
-        <select v-model="selectedDays" class="period-select">
-          <option :value="7">最近 7 天</option>
-          <option :value="30">最近 30 天</option>
-          <option :value="90">最近 90 天</option>
-        </select>
-
-        <select
-          v-if="isTeacherOrAdmin"
-          v-model="selectedUserId"
-          class="student-select"
-        >
-          <option :value="null">-- 选择学生 --</option>
-          <option v-for="s in students" :key="s.id" :value="s.id">
-            {{ s.nickname || s.username }}
-          </option>
-        </select>
+        <div class="current-filter">统计周期：最近 {{ currentDays }} 天</div>
+        <div v-if="isTeacherOrAdmin" class="current-filter">
+          当前学员：{{ selectedStudentName }}
+        </div>
 
         <button @click="loadReport" :disabled="isLoading" class="btn-refresh">
           <i class="fas fa-sync-alt" :class="{ 'fa-spin': isLoading }"></i>
@@ -60,7 +48,8 @@
     <div v-else-if="!report" class="empty-state">
       <div class="empty-icon">📋</div>
       <h3>点击"刷新预览"加载报告</h3>
-      <p>加载后可预览报告内容并下载 PDF</p>
+      <p v-if="isTeacherOrAdmin && !hasSelectedStudent">请先选择学员</p>
+      <p v-else>加载后可预览报告内容并下载 PDF</p>
       <button @click="loadReport" class="btn-generate">
         <i class="fas fa-chart-bar"></i> 生成报告
       </button>
@@ -84,7 +73,7 @@
           >
           <span
             >统计周期：最近
-            {{ report.overview?.period_days || selectedDays }} 天</span
+            {{ report.overview?.period_days || currentDays }} 天</span
           >
           <span>生成时间：{{ formatDate(report.generated_at) }}</span>
         </div>
@@ -358,7 +347,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from "vue";
+import { ref, computed, onMounted, watch } from "vue";
 import { analyticsAPI } from "../../api/analytics";
 import { useAuthStore } from "../../stores/user";
 import { useAnalyticsStore } from "../../stores/analytics";
@@ -370,13 +359,21 @@ const report = ref(null);
 const isLoading = ref(false);
 const isDownloading = ref(false); // ⭐ 新增：下载状态
 const error = ref("");
-const selectedDays = ref(30);
-const selectedUserId = ref(null);
 
 const isTeacherOrAdmin = computed(() =>
   authStore.hasAnyRole(["teacher", "admin"]),
 );
 const students = computed(() => analyticsStore.students);
+const currentDays = computed(() => analyticsStore.currentPeriod || 30);
+const selectedUserId = computed(() => analyticsStore.selectedStudentId);
+const hasSelectedStudent = computed(
+  () => !isTeacherOrAdmin.value || !!selectedUserId.value,
+);
+const selectedStudentName = computed(() => {
+  if (!selectedUserId.value) return "未选择";
+  const student = students.value.find((s) => s.id === selectedUserId.value);
+  return student ? student.nickname || student.username : "未选择";
+});
 
 const scoreLabels = {
   time: "学习时长",
@@ -400,13 +397,31 @@ onMounted(async () => {
   }
 });
 
+watch(selectedUserId, (val) => {
+  if (isTeacherOrAdmin.value && !val) {
+    report.value = null;
+  }
+});
+
+function ensureStudentSelected() {
+  if (isTeacherOrAdmin.value && !selectedUserId.value) {
+    report.value = null;
+    error.value = "请先选择学员";
+    alert("请先选择学员");
+    return false;
+  }
+  return true;
+}
+
 async function loadReport() {
+  if (!ensureStudentSelected()) return;
+
   isLoading.value = true;
   error.value = "";
   report.value = null;
   try {
     const userId = isTeacherOrAdmin.value ? selectedUserId.value : null;
-    const res = await analyticsAPI.getReport(selectedDays.value, userId);
+    const res = await analyticsAPI.getReport(currentDays.value, userId);
     if (res.status === "success") {
       report.value = res.data;
     } else {
@@ -421,10 +436,12 @@ async function loadReport() {
 
 // ⭐ 核心：直接下载 PDF
 async function downloadPDF() {
+  if (!ensureStudentSelected()) return;
+
   isDownloading.value = true;
   try {
     const userId = isTeacherOrAdmin.value ? selectedUserId.value : null;
-    await analyticsAPI.downloadReportPDF(selectedDays.value, userId);
+    await analyticsAPI.downloadReportPDF(currentDays.value, userId);
   } catch (e) {
     alert("PDF 下载失败：" + (e.message || "未知错误"));
   } finally {
@@ -484,14 +501,13 @@ function getMasteryText(m) {
   align-items: center;
 }
 
-.period-select,
-.student-select {
+.current-filter {
   padding: 7px 12px;
-  border: 1px solid #ddd;
+  border: 1px solid #e0e0e0;
   border-radius: 6px;
   font-size: 13px;
-  outline: none;
-  cursor: pointer;
+  color: #555;
+  background: #fafafa;
 }
 
 .btn-refresh,

@@ -1,0 +1,31 @@
+idx,group,question,question_type,needs_rag,mode,confidence_mode,max_score,raw_result_count,used_result_count,suggested_threshold,effective_search_threshold,top_k,referenced_chunk_ids
+1,高,什么是一维数组？在内存中如何存储？,concept,True,rag,high,0.8468,5,5,0.6,0.65,5,"[247, 260, 268, 154, 198]"
+2,高,C 语言中数组下标为什么从 0 开始？越界会有什么后果？,concept,True,rag,high,0.8401,5,5,0.6,0.65,5,"[204, 259, 135, 202, 144]"
+3,高,二维数组在 C 语言中是按行优先还是按列优先存储？,general,True,rag,high,0.8178,5,5,0.7,0.65,5,"[246, 201, 247, 203, 155]"
+4,高,数组作为函数参数时，传递的是数组本身还是首地址？,general,True,rag,high,0.8407,5,5,0.7,0.65,5,"[273, 278, 266, 255, 253]"
+5,高,指针变量如何声明和初始化？空指针为什么危险？,syntax,True,rag,medium,0.7744,3,3,0.65,0.65,3,"[265, 264, 262]"
+6,高,arr[i] 与 *(arr+i) 为什么等价？,concept,True,rag,medium,0.774,5,5,0.65,0.65,5,"[134, 261, 206, 133, 237]"
+7,高,malloc、calloc、realloc、free 的作用分别是什么？,general,True,rag,medium,0.7199,5,5,0.7,0.65,5,"[142, 243, 265, 133, 254]"
+8,高,fopen 常见模式 r、w、a、r+ 的区别是什么？,concept,True,rag,medium,0.7748,5,5,0.65,0.65,5,"[265, 172, 197, 134, 133]"
+9,高,fread/fwrite 和 fscanf/fprintf 分别适合什么场景？,general,True,rag,medium,0.7347,5,5,0.7,0.65,5,"[163, 162, 157, 213, 227]"
+10,高,常见段错误（Segmentation Fault）的排查步骤是什么？,concept,True,rag,medium,0.7439,5,5,0.65,0.65,5,"[219, 173, 162, 179, 240]"
+11,中,C23 的 typeof_unqual 与 GCC 的 typeof 在教学中如何兼容讲解？,syntax,True,rag,high,0.8314,3,3,0.65,0.65,3,"[150, 139, 203]"
+12,中,const int *p、int *const p、const int *const p 的差异是什么？,concept,True,rag,medium,0.7679,5,5,0.6,0.65,5,"[265, 133, 151, 267, 172]"
+13,中,qsort 的比较函数该如何写，才能避免比较器错误？,concept,True,rag,medium,0.7482,5,5,0.6,0.65,5,"[226, 238, 243, 194, 229]"
+14,中,为什么数组传参后 sizeof 结果会变？应如何正确获取长度？,concept,True,rag,high,0.8144,5,5,0.6,0.65,5,"[168, 204, 247, 250, 202]"
+15,中,结构体内存对齐和填充会如何影响 sizeof 与二进制文件读写？,syntax,True,rag,high,0.8393,3,3,0.65,0.65,3,"[155, 168, 153]"
+16,中,二分查找里 mid=(l+r)/2 有什么潜在风险？如何改写更稳妥？,syntax,True,rag,medium,0.7686,3,3,0.65,0.65,3,"[243, 197, 219]"
+17,中,函数指针在回调场景中的教学示例可以怎么设计？,syntax,True,rag,medium,0.7762,3,3,0.65,0.65,3,"[226, 223, 273]"
+18,中,多级指针在动态二维数组分配中如何避免内存泄漏？,syntax,True,rag,medium,0.7909,3,3,0.65,0.65,3,"[177, 247, 256]"
+19,中,AddressSanitizer 和 Valgrind 在课堂演示中如何分工使用？,general,False,ordinary,none,0.0,0,0,1.0,0.65,5,[]
+20,中,文本文件与二进制文件在跨平台场景下的差异如何解释给学生？,concept,True,rag,high,0.8123,5,5,0.65,0.65,5,"[155, 136, 131, 140, 153]"
+21,低,请写一段关于春天景色的描写。,general,False,ordinary,none,0.0,0,0,1.0,0.65,5,[]
+22,低,Spring 事务传播行为有哪几种，如何选择？,general,False,ordinary,none,0.0,0,0,1.0,0.65,5,[]
+23,低,家常红烧茄子的做法步骤有哪些？,general,False,ordinary,none,0.0,0,0,1.0,0.65,5,[]
+24,低,TensorFlow 里反向传播自动求导是如何实现的？,general,False,ordinary,none,0.0,0,0,1.0,0.65,5,[]
+25,低,Kubernetes 的 Service Mesh 为什么会引入额外延迟？,concept,True,ordinary,none,0.0,0,0,0.6,0.65,5,[]
+26,低,你觉得早睡早起有哪些好处？,general,False,ordinary,none,0.0,0,0,1.0,0.65,5,[]
+27,低,Solidity 合约如何防范重入攻击？,general,False,ordinary,none,0.0,0,0,1.0,0.65,5,[]
+28,低,如何规划一次周末短途旅行？,general,False,ordinary,none,0.0,0,0,1.0,0.65,5,[]
+29,低,Spark Shuffle 的代价主要来自哪里？,general,False,ordinary,none,0.0,0,0,1.0,0.65,5,[]
+30,低,比较咖啡和茶在日常饮用体验上的差异。,general,False,ordinary,none,0.0,0,0,1.0,0.65,5,[]

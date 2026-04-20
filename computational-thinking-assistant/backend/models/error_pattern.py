@@ -40,7 +40,15 @@ class ErrorPattern(db.Model):
                          index=True, comment='最后出现时间')
 
     # 关联关系
-    user = db.relationship('User', backref=db.backref('error_patterns', lazy='dynamic'))
+    user = db.relationship(
+        'User',
+        backref=db.backref(
+            'error_patterns',
+            lazy='dynamic',
+            cascade='all, delete-orphan',
+            passive_deletes=True
+        )
+    )
 
     def __repr__(self):
         return f'<ErrorPattern {self.id}: {self.error_type} - {self.related_topic}>'

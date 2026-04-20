@@ -23,8 +23,8 @@ class StatsCalculator:
     
     @staticmethod
     def _get_student_ids():
-        """获取所有学生用户ID列表"""
-        students = User.query.filter_by(role='student', is_active=True).all()
+        """获取所有学生(含管理员)用户ID列表"""
+        students = User.query.filter(User.role.in_(['student', 'admin']), User.is_active == True).all()
         return [s.id for s in students]
     
     @staticmethod

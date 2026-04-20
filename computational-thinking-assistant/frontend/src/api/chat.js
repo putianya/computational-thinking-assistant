@@ -155,10 +155,18 @@ export const chatAPI = {
                 );
                 console.log("question_type:", data.question_type);
                 console.log("needs_rag:", data.needs_rag);
-                console.log("max_score:", data.max_score, "threshold:", data.threshold);
+                console.log(
+                  "max_score:",
+                  data.max_score,
+                  "threshold:",
+                  data.threshold,
+                );
                 console.log("raw_result_count:", data.raw_result_count);
                 console.log("used_result_count:", data.used_result_count);
-                console.log("referenced_chunk_ids:", data.referenced_chunk_ids || []);
+                console.log(
+                  "referenced_chunk_ids:",
+                  data.referenced_chunk_ids || [],
+                );
                 if (refs.length > 0) {
                   console.table(
                     refs.map((x) => ({

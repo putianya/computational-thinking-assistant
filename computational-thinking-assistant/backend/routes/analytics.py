@@ -399,12 +399,13 @@ def download_report_pdf():
 
 
 def _get_viewable_student_ids(viewer_id):
-    """返回当前用户可查看的学生ID集合"""
+    """返回当前用户可查看的学生(含管理员)ID集合"""
     viewer = User.query.get(viewer_id)
     if not viewer:
         return set()
     if viewer.role == 'admin':
-        return {u.id for u in User.query.filter_by(role='student', is_active=True).all()}
+        # 管理员：能看到所有学生和管理员自身的数据，方便测试和演示
+        return {u.id for u in User.query.filter(User.role.in_(['student', 'admin']), User.is_active == True).all()}
     elif viewer.role == 'teacher':
-        return {s.id for s in viewer.students if s.role == 'student'}
+        return {s.id for s in viewer.students if s.role in ['student', 'admin']}
     return set()

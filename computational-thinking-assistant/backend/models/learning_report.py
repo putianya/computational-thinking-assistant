@@ -48,7 +48,15 @@ class LearningReport(db.Model):
                           index=True, comment='创建时间')
 
     # 关联关系
-    user = db.relationship('User', backref=db.backref('learning_reports', lazy='dynamic'))
+    user = db.relationship(
+        'User',
+        backref=db.backref(
+            'learning_reports',
+            lazy='dynamic',
+            cascade='all, delete-orphan',
+            passive_deletes=True
+        )
+    )
 
     def __repr__(self):
         return f'<LearningReport {self.id}: {self.report_type} for User {self.user_id}>'
