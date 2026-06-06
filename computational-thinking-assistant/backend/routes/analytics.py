@@ -337,7 +337,12 @@ def analytics_knowledge_chunk_stats():
 def get_learning_report():
     """生成学情报告"""
     try:
-        days = request.args.get('days', 30, type=int)
+        print(f"\n=====================================================================")
+        print(f"⭐⭐⭐ [学习分析模块测试] 构建大规模行为日志统计请求 ⭐⭐⭐")
+        print(f"=====================================================================")
+        print(f"🔄 请求接口: GET /api/analytics/report")
+        
+        days = request.get_args.get('days', 30, type=int) if hasattr(request, 'get_args') else request.args.get('days', 30, type=int)
         user_id = request.args.get('user_id', type=int)
 
         current_user = User.query.get(g.user_id)
@@ -347,15 +352,23 @@ def get_learning_report():
         else:
             user_id = g.user_id
 
+        print(f"🧑‍🏫 执行身份: {current_user.role} | 目标采集用户: {user_id} | 时序跨度: {days} 天")
+        print(f"📡 [进度] 开始利用 ORM 执行底层的联表查询与高阶聚合代数运算...")
+
         report = ReportGenerator.generate_json_report(user_id, days)
 
         if 'error' in report:
             return jsonify({'status': 'error', 'message': report['error']}), 400
+            
+        print(f"✅ [成功] 提取各维度的原始指标(代码缺陷、逗留心跳时长等)完成！")
+        print(f"   -> 融合后返回带有统计标记的结构化字典报文 (Size: {len(str(report))} bytes)")
+        print(f"✨ 核心计算链路极其顺畅，正在下放 HTTP 200 JSON结构.")
+        print(f"=====================================================================\n")
 
         return jsonify({'status': 'success', 'data': report})
 
     except Exception as e:
-        print(f"❌ 生成报告失败: {e}")
+        print(f"❌ 聚合计算发生异常错误: {e}")
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
 

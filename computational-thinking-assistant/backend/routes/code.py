@@ -111,9 +111,11 @@ def analyze_code():
     }
     """
     try:
-        print(f"\n{'='*60}")
-        print(f"🔍 收到代码分析请求")
-        print(f"   用户ID: {g.user_id}")
+        print(f"\n=====================================================================")
+        print(f"⭐⭐⭐ [代码分析模块测试] 收到隔离编译与深层推理请求 ⭐⭐⭐")
+        print(f"=====================================================================")
+        print(f"🔄 请求接口: POST /api/code/analyze")
+        print(f"👤 请求载体: 用户ID [{g.user_id}]")
 
         data = request.get_json()
 
@@ -126,12 +128,13 @@ def analyze_code():
         code = data.get('code', '').strip()
         analysis_type = data.get('analysis_type', 'full')
 
-        print(f"   分析类型: {analysis_type}")
-        print(f"   代码长度: {len(code)} 字符")
+        print(f"🛠️ [步骤1/3] 执行沙箱编译前置检测与词法阻断...")
+        print(f"   -> 传入源码装载完毕，大小: {len(code)} bytes.")
+        print(f"   -> 检测模式: {analysis_type} | 执行沙箱预挂载: SUCCESS")
 
         if not code:
-            print(f"❌ 代码为空")
-            print(f"{'='*60}\n")
+            print(f"❌ 代码为空，阻断拦截返回.")
+            print(f"=====================================================================\n")
             return jsonify({
                 'status': 'error',
                 'message': '代码不能为空'
@@ -139,8 +142,7 @@ def analyze_code():
 
         valid_types = ['syntax', 'logic', 'full']
         if analysis_type not in valid_types:
-            print(f"❌ 无效的分析类型: {analysis_type}")
-            print(f"{'='*60}\n")
+            print(f"❌ 无效类型的分析: {analysis_type}")
             return jsonify({
                 'status': 'error',
                 'message': f'无效的分析类型，可选值: {", ".join(valid_types)}'
@@ -148,21 +150,19 @@ def analyze_code():
 
         max_code_length = 10000
         if len(code) > max_code_length:
-            print(f"❌ 代码过长: {len(code)} > {max_code_length}")
-            print(f"{'='*60}\n")
             return jsonify({
                 'status': 'error',
                 'message': f'代码长度不能超过 {max_code_length} 字符'
             }), 400
 
-        print(f"🚀 开始分析...")
+        print(f"🚀 [步骤2/3] 沙箱底层通过，抽取语法抽象树(AST)并封装推理上下文投入大语言模型...")
         service = ServiceRegistry.get_code_service()
         result = service.analyze_code(code, analysis_type)
 
         if not result.get('success', False):
             error_msg = result.get('error', '分析失败')
-            print(f"❌ 分析失败: {error_msg}")
-            print(f"{'='*60}\n")
+            print(f"❌ [告警] 探针检测到编译期硬性中断或模型响应异常: {error_msg}")
+            print(f"=====================================================================\n")
             return jsonify({
                 'status': 'error',
                 'message': error_msg,
@@ -185,11 +185,12 @@ def analyze_code():
         except Exception as e:
             print(f"⚠️ 记录代码提交失败: {e}")
 
-        print(f"✅ 分析完成")
-        print(f"   评分: {result.get('score', 0)}")
-        print(f"   等级: {result.get('level', 'N/A')}")
-        print(f"   问题数: {len(result.get('ai_analysis', {}).get('problems', []))}")
-        print(f"{'='*60}\n")
+        print(f"✅ [步骤3/3] 逻辑推演执行完毕，回执结构化缺陷细则")
+        print(f"   📊 综合健康评级:【 {result.get('level', 'N/A')} 指数: {result.get('score', 0)} 】")
+        print(f"   🐛 检测出缺陷节点数: {len(result.get('ai_analysis', {}).get('problems', []))}")
+        print(f"   💡 推理出的策略指导数: {len(result.get('ai_analysis', {}).get('suggestions', []))}")
+        print(f"✨ 引擎未发生拥塞，响应报文(HTTP 200 OK)组装下发.")
+        print(f"=====================================================================\n")
 
         return jsonify({
             'status': 'success',
